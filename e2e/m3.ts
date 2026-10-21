@@ -64,10 +64,36 @@ await page.getByRole("button", { name: /^Sóc / }).click();
 let s = await state(page);
 const move = firstMove(s);
 if (!move) throw new Error("No he trobat cap primera jugada");
-for (let k = 0; k < move.slots.length; k++) {
-  await page.locator(".rack button").nth(move.slots[k]!).click();
-  await page.locator(`[data-i="${move.cells[k]}"]`).click();
+
+/** Arrossega una fitxa de l'atril a una casella, com ho faria un dit (la fitxa es veu 44 px per sobre del dit). */
+async function dragTo(slot: number, cell: number, shot?: string) {
+  const from = (await page.locator(".rack button").nth(slot).boundingBox())!;
+  const to = (await page.locator(`[data-i="${cell}"]`).boundingBox())!;
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  const tx = to.x + to.width / 2, ty = to.y + to.height / 2 + 44;
+  for (let k = 1; k <= 8; k++) await page.mouse.move(from.x + (tx - from.x) * k / 8, from.y + (ty - from.y) * k / 8);
+  if (shot) await page.screenshot({ path: shot });
+  await page.mouse.up();
 }
+
+// Primera fitxa arrossegada: sola no és vàlida (cal un mínim de 2) → vermella
+await dragTo(move.slots[0]!, move.cells[0]!, `${OUT}/4a-arrossegant.png`);
+console.log("Fitxes vermelles amb una sola fitxa:", await page.locator(".cell.pending.bad").count());
+// La resta, també arrossegant → la jugada és vàlida → verdes
+for (let k = 1; k < move.slots.length; k++) await dragTo(move.slots[k]!, move.cells[k]!);
+console.log("Fitxes verdes amb la paraula completa:", await page.locator(".cell.pending.good").count(), "de", move.slots.length);
+// Moure una fitxa ja posada a un lloc dolent i tornar-la
+const firstCell = (await page.locator(`[data-i="${move.cells[0]}"]`).boundingBox())!;
+const away = (await page.locator(`[data-i="${move.cells[0]! - 75}"]`).boundingBox())!; // 5 files amunt
+await page.mouse.move(firstCell.x + firstCell.width / 2, firstCell.y + firstCell.height / 2);
+await page.mouse.down();
+for (let k = 1; k <= 8; k++) await page.mouse.move(firstCell.x + (away.x - firstCell.x) * k / 8 + away.width / 2, firstCell.y + (away.y + 44 - firstCell.y) * k / 8 + away.height / 2);
+await page.mouse.up();
+console.log("Després de moure una fitxa lluny: vermelles", await page.locator(".cell.pending.bad").count());
+await page.screenshot({ path: `${OUT}/4b-vermelles.png` });
+await page.getByRole("button", { name: "Recull" }).click();
+for (let k = 0; k < move.slots.length; k++) await dragTo(move.slots[k]!, move.cells[k]!);
 await page.screenshot({ path: `${OUT}/4-jugada-pendent.png` });
 const statusText = await page.locator(".status").innerText();
 console.log("Estat abans de jugar:", statusText);

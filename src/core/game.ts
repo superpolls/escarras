@@ -26,7 +26,7 @@ export type MoveError =
   | { code: "first-center" }
   | { code: "first-two" }
   | { code: "not-connected" }
-  | { code: "invalid-words"; words: string[] }
+  | { code: "invalid-words"; words: string[]; cells: number[] }
   | { code: "bag-too-small" }
   | { code: "bad-exchange" }
   | { code: "table-full" }
@@ -243,8 +243,12 @@ export function checkPlay(state: GameState, placements: readonly Placement[], is
     }
     return { cells, letters: cells.map(c => board[c]!.letter), score: sum * mult };
   });
-  const invalid = words.filter(w => !isWord(w.letters)).map(w => tilesToWord(w.letters));
-  if (invalid.length) return no({ code: "invalid-words", words: invalid });
+  const invalid = words.filter(w => !isWord(w.letters));
+  if (invalid.length) {
+    // Caselles de les paraules no vàlides, per marcar-les a la pantalla
+    const cells = [...new Set(invalid.flatMap(w => w.cells))].sort((a, b) => a - b);
+    return no({ code: "invalid-words", words: invalid.map(w => tilesToWord(w.letters)), cells });
+  }
 
   const bingo = placements.length === RACK_SIZE;
   const score = words.reduce((a, w) => a + w.score, 0) + (bingo ? 50 : 0); // (49)

@@ -121,3 +121,9 @@ Es construeix en mig segon amb `npm run lexicon`. El script comprova primer l'em
 **Compilar (Vite).** Converteix el TypeScript en fitxers optimitzats per al navegador, a la carpeta `app/`, que GitHub Pages publica.
 
 **Prova automàtica al navegador (Playwright).** Un programa obre l'app en un Chrome amb mida de mòbil i hi juga: crea una partida de 3, busca la millor primera paraula amb el diccionari i la col·loca tocant fitxes i caselles, desfà, canvia fitxes, prova una jugada no vàlida, amplia el tauler, passa, recarrega la pàgina i comprova la pantalla final. Fa captures de cada pas i comprova que no hi ha cap error a la consola.
+
+**Arrossegar (Pointer Events).** L'arrossegar clàssic del navegador (HTML5 *drag and drop*) no funciona amb el dit a l'iPhone; els Pointer Events sí, i tracten igual dit, ratolí i llapis. Si el dit es mou menys de 8 píxels és un toc; si es mou més, és arrossegar. La fitxa es dibuixa 44 píxels per sobre del dit perquè no quedi tapada, i es deixa on es veu la fitxa, no on és el dit.
+
+**Validació en directe.** Cada vegada que es mou una fitxa, el motor revalida la jugada (mil·lisegons). En vermell, les fitxes de les paraules no vàlides, o totes si el problema és de posició; en verd, quan la jugada és vàlida.
+
+**Lliçó 4 · un test mal plantejat sembla un error.** La prova de moure una fitxa dues files amunt no la movia: amb els 44 píxels d'elevació, el dit només es desplaçava 6 píxels, menys del llindar, i el programa ho interpretava (correctament) com un toc. Abans de corregir el codi, cal comprovar que la prova fa el que creus.

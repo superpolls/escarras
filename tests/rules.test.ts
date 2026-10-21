@@ -109,7 +109,16 @@ describe("jugades (9-15)", () => {
     expect(checkPlay(g, word("L8", "SI", "V"), isWord).ok).toBe(true);
     // E a L8: CASAE no és vàlida
     const r = checkPlay(g, word("L8", "E", "H"), isWord);
-    expect(r.ok ? null : r.error).toEqual({ code: "invalid-words", words: ["CASAE"] });
+    expect(r.ok ? null : r.error).toEqual({ code: "invalid-words", words: ["CASAE"], cells: [112, 113, 114, 115, 116] });
+  });
+});
+
+describe("caselles de les paraules no vàlides (per marcar-les en vermell)", () => {
+  it("només es marquen les caselles de la paraula dolenta, no les de la creuada bona", () => {
+    const g = setup("S E I O U A R");
+    put(g, "H8", "CASA", "H");
+    const r = checkPlay(g, word("L8", "SE", "V"), dict("CASA", "CASAS"));
+    expect(r.ok ? null : r.error).toEqual({ code: "invalid-words", words: ["SE"], cells: [116, 131] });
   });
 });
 
