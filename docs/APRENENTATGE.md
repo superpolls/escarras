@@ -134,7 +134,9 @@ Es construeix en mig segon amb `npm run lexicon`. El script comprova primer l'em
 
 ## 8. Paraules aprovades pels jugadors
 
-**Proposta en lloc de jugada.** Si una paraula no és al diccionari però la posició és correcta, el jugador la pot proposar. La jugada no s'aplica fins que l'aproven: amb connexió, tots els altres; sense connexió, el següent en escanejar el QR. Si algú la rebutja, no cal desfer res, perquè no s'havia aplicat. Quan s'aprova, el motor l'aplica en l'acció de l'últim vot, i qualsevol mòbil pot comprovar-ho repetint-la.
+**Proposta en lloc de jugada.** Si una paraula no és al diccionari però la posició és correcta, el jugador pot demanar que l'acceptin. Només ho decideix el jugador següent: amb connexió, des del seu mòbil; sense connexió, en escanejar el QR. Si la rebutja, no cal desfer res, perquè no s'havia aplicat. Si l'accepta, el motor l'aplica en aquella mateixa acció, i qualsevol mòbil pot comprovar-ho repetint-la.
+
+**Simplificar treu estat.** La primera versió demanava el vot de tots amb connexió. Amb una sola persona que decideix desapareixen el quòrum i la llista de vots: la proposta només guarda qui juga i on posa les fitxes, el QR porta 9 bits menys i hi ha menys casos per provar.
 
 **Diccionari viu.** Les paraules aprovades valen fins al final de la partida i es llisten a la pantalla final. És la manera d'anar completant el diccionari amb l'ús real.
 

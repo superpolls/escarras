@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { cellIndex } from "../src/core/board";
 import { decodeState, encodeState, stateHash } from "../src/core/codec";
 import {
-  applyAction, checkPlay, createGame, currentPlayer, EngineError, isSenyorsRack, rackValue,
+  applyAction, proposalApprover, checkPlay, createGame, currentPlayer, EngineError, isSenyorsRack, rackValue,
   runStartDraw, senyorsAtTurnStart, senyorsAvailable, standings, swapSenyors, tileInventoryOk, verifyTransition,
 } from "../src/core/game";
 import { VOWELS } from "../src/core/tiles";
@@ -413,43 +413,36 @@ describe("demanar que s'aprovi una paraula que el diccionari no té (D-21)", () 
 
   it("només es pot proposar si l'única pega són les paraules, no la posició", () => {
     const g = three();
-    expect(errorOf(() => applyAction(g, { type: "propose", placements: word("A1", "XIQUETS", "H"), quorum: "all" }, known))).toEqual({ code: "first-center" });
+    expect(errorOf(() => applyAction(g, { type: "propose", placements: word("A1", "XIQUETS", "H") }, known))).toEqual({ code: "first-center" });
     const ok = setup("C A S A E I O", ["A", "B", "C"]);
-    expect(errorOf(() => applyAction(ok, { type: "propose", placements: word("H8", "CASA", "H"), quorum: "all" }, known))).toEqual({ code: "not-allowed" });
+    expect(errorOf(() => applyAction(ok, { type: "propose", placements: word("H8", "CASA", "H") }, known))).toEqual({ code: "not-allowed" });
   });
 
-  it("amb connexió l'han d'aprovar tots els altres; llavors s'aplica i la paraula queda acceptada", () => {
-    let g = applyAction(three(), { type: "propose", placements: xiq(), quorum: "all" }, known);
-    expect(g.proposal).toMatchObject({ player: 0, quorum: "all", approvals: [] });
+  it("l'aprova només el jugador següent; llavors s'aplica i la paraula queda acceptada", () => {
+    const g = applyAction(three(), { type: "propose", placements: xiq() }, known);
+    expect(g.proposal).toMatchObject({ player: 0 });
+    expect(proposalApprover(g)).toBe(1);
     expect(g.current).toBe(0);
     expect(g.players[0]!.rack).toHaveLength(7); // encara no s'ha jugat
     expect(errorOf(() => applyAction(g, { type: "pass" }, known))).toEqual({ code: "proposal-pending" });
-    const before = g;
-    g = applyAction(g, { type: "approve" }, known, 1);
-    expect(g.board[112]).toBeNull();
-    g = applyAction(g, { type: "approve" }, known, 2);
-    expect(g.proposal).toBeNull();
-    expect(g.board[112]).not.toBeNull();
-    expect(g.players[0]!.score).toBe(46); // (10+1+8+1+1×2+1)×2
-    expect(g.last).toMatchObject({ player: 2, action: { type: "approve" } });
-    expect(g.current).toBe(1);
-    expect(g.approvedWords).toEqual([T("XIQUETS")]);
-    expect(tileInventoryOk(g)).toBe(true);
-    expect(verifyTransition(before, applyAction(before, { type: "approve" }, known, 1), known).ok).toBe(true);
-    // La paraula aprovada val per a la resta de la partida
-    expect(checkPlay({ ...g, current: 1, players: g.players.map((p, i) => (i === 1 ? { ...p, rack: [...T("XIQUETS"), T("A")[0]!] } : p)), board: g.board.map(() => null) }, xiq(), known).ok).toBe(true);
-  });
-
-  it("sense connexió n'hi ha prou amb el jugador següent; un altre no la pot aprovar", () => {
-    const g = applyAction(three(), { type: "propose", placements: xiq(), quorum: "next" }, known);
     expect(errorOf(() => applyAction(g, { type: "approve" }, known, 2))).toEqual({ code: "not-allowed" });
+    expect(errorOf(() => applyAction(g, { type: "approve" }, known, 0))).toEqual({ code: "not-allowed" });
     const n = applyAction(g, { type: "approve" }, known, 1);
     expect(n.proposal).toBeNull();
     expect(n.board[112]).not.toBeNull();
+    expect(n.players[0]!.score).toBe(46); // (10+1+8+1+1×2+1)×2
+    expect(n.last).toMatchObject({ player: 1, action: { type: "approve" } });
+    expect(n.current).toBe(1);
+    expect(n.approvedWords).toEqual([T("XIQUETS")]);
+    expect(tileInventoryOk(n)).toBe(true);
+    expect(verifyTransition(g, n, known).ok).toBe(true);
+    // La paraula aprovada val per a la resta de la partida
+    expect(checkPlay({ ...n, current: 1, players: n.players.map((p, i) => (i === 1 ? { ...p, rack: [...T("XIQUETS"), T("A")[0]!] } : p)), board: n.board.map(() => null) }, xiq(), known).ok).toBe(true);
   });
 
-  it("si algú la rebutja, o qui l'ha proposat la retira, no s'aplica i el torn continua", () => {
-    const g = applyAction(three(), { type: "propose", placements: xiq(), quorum: "all" }, known);
+  it("si el jugador següent la rebutja, o qui l'ha proposat la retira, no s'aplica i el torn continua", () => {
+    const g = applyAction(three(), { type: "propose", placements: xiq() }, known);
+    expect(errorOf(() => applyAction(g, { type: "reject" }, known, 2))).toEqual({ code: "not-allowed" });
     for (const who of [1, 0]) {
       const n = applyAction(g, { type: "reject" }, known, who);
       expect(n.proposal).toBeNull();
@@ -459,16 +452,18 @@ describe("demanar que s'aprovi una paraula que el diccionari no té (D-21)", () 
     }
   });
 
-  it("si marxa l'únic que faltava per aprovar, la jugada s'aplica", () => {
-    let g = applyAction(three(), { type: "propose", placements: xiq(), quorum: "all" }, known);
-    g = applyAction(g, { type: "approve" }, known, 1);
-    g = applyAction(g, { type: "leave" }, known, 2);
-    expect(g.proposal).toBeNull();
+  it("si marxa qui l'havia d'aprovar, l'aprova el següent", () => {
+    let g = applyAction(three(), { type: "propose", placements: xiq() }, known);
+    g = applyAction(g, { type: "leave" }, known, 1);
+    expect(g.proposal).not.toBeNull();
+    expect(proposalApprover(g)).toBe(2);
+    g = applyAction(g, { type: "approve" }, known, 2);
     expect(g.board[112]).not.toBeNull();
+    expect(g.current).toBe(2);
   });
 
   it("es codifica i descodifica amb la proposta i les paraules aprovades", () => {
-    const g = applyAction(three(), { type: "propose", placements: xiq(), quorum: "next" }, known);
+    const g = applyAction(three(), { type: "propose", placements: xiq() }, known);
     expect(decodeState(encodeState(g))).toEqual(g);
     const n = applyAction(g, { type: "approve" }, known, 1);
     expect(decodeState(encodeState(n))).toEqual(n);

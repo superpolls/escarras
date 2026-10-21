@@ -11,7 +11,7 @@
  *                · atril: n(3) + fitxes(5 c/u)
  *   tauler: mapa d'ocupació (225), i per cada casella ocupada: escarràs(1) + fitxa(5)
  *   bossa: n(7) + fitxes(5 c/u)
- *   proposta: hi ha(1) [+ jugador(3) + quòrum(1) + aprovacions(8) + n-1(3) + col·locacions(14 c/u)]
+ *   proposta: hi ha(1) [+ jugador(3) + n-1(3) + col·locacions(14 c/u)]
  *   paraules aprovades: n(5) + per paraula: llargada(4) + fitxes(5 c/u)
  *   última acció: tipus(4); si n'hi ha: jugador(3) · punts(13) · senyors(2) · dades segons el tipus
  */
@@ -116,8 +116,6 @@ export function encodeState(s: GameState): Uint8Array {
   w.write(s.proposal ? 1 : 0, 1);
   if (s.proposal) {
     w.write(s.proposal.player, 3);
-    w.write(s.proposal.quorum === "next" ? 1 : 0, 1);
-    w.write(s.proposal.approvals.reduce((m, v) => m | (1 << v), 0), 8);
     writePlacements(w, s.proposal.placements);
   }
   w.write(s.approvedWords.length, 5);
@@ -133,10 +131,7 @@ export function encodeState(s: GameState): Uint8Array {
     w.write(last.score, 13);
     w.write(last.senyorsSwaps, 2);
     const a = last.action;
-    if (a.type === "play") {
-      writePlacements(w, a.placements);
-    } else if (a.type === "propose") {
-      w.write(a.quorum === "next" ? 1 : 0, 1);
+    if (a.type === "play" || a.type === "propose") {
       writePlacements(w, a.placements);
     } else if (a.type === "exchange") {
       w.write(a.tiles.length - 1, 3);
@@ -226,11 +221,8 @@ export function decodeState(bytes: Uint8Array): GameState {
   let proposal: GameState["proposal"] = null;
   if (r.read(1)) {
     const player = r.read(3);
-    const quorum = r.read(1) ? "next" as const : "all" as const;
-    const mask = r.read(8);
-    if (player >= n || mask >> n) bad("Proposta");
-    const approvals = Array.from({ length: n }, (_, i) => i).filter(i => mask & (1 << i));
-    proposal = { player, placements: readPlacements(), quorum, approvals };
+    if (player >= n) bad("Proposta");
+    proposal = { player, placements: readPlacements() };
   }
   const approvedWords = Array.from({ length: r.read(5) }, () => Array.from({ length: r.read(4) }, () => tile(false)));
 
@@ -245,8 +237,7 @@ export function decodeState(bytes: Uint8Array): GameState {
     if (type === "play") {
       action = { type: "play", placements: readPlacements() } satisfies Action;
     } else if (type === "propose") {
-      const quorum = r.read(1) ? "next" as const : "all" as const;
-      action = { type, placements: readPlacements(), quorum };
+      action = { type, placements: readPlacements() };
     } else if (type === "exchange") {
       const count = r.read(3) + 1;
       action = { type: "exchange", tiles: Array.from({ length: count }, () => tile()) };

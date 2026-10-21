@@ -192,7 +192,7 @@ function LastMove({ state, prev }: { state: GameState; prev: GameState | null })
     // Les fitxes noves són les que hi ha ara i abans no hi eren
     const placed = state.board.flatMap((c, index) => (c && !prev.board[index] ? [{ index, tile: c.tile, letter: c.letter }] : []));
     const mover = state.players[prev.current]!.name;
-    text = `${mover} ha jugat ${wordsOf(placed)} (aprovada per tothom) · ${points(last.score)}`;
+    text = `${mover} ha jugat ${wordsOf(placed)} (l'ha acceptada ${who}) · ${points(last.score)}`;
   } else if (a.type === "exchange") text = `${who} ha canviat ${a.tiles.length} ${a.tiles.length === 1 ? "fitxa" : "fitxes"}`;
   else if (a.type === "pass") text = `${who} ha passat`;
   else if (a.type === "undo") text = `${who} ha desfet la jugada`;

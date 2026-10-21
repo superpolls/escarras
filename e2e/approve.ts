@@ -31,9 +31,10 @@ for (const [k, slot] of pair.entries()) {
 }
 console.log("Estat:", await page.locator(".status").innerText());
 await page.screenshot({ path: `${OUT}/12-demana-aprovacio.png` });
-await page.getByRole("button", { name: "Demana que l'aprovin" }).click();
+await page.getByRole("button", { name: /^Demana a .+ que l'accepti$/ }).click();
 await page.screenshot({ path: `${OUT}/13-accepteu.png` });
-await page.getByRole("button", { name: "Sí, l'acceptem" }).click();
+console.log("Pregunta:", await page.locator(".modal h2").innerText());
+await page.getByRole("button", { name: "Sí, l'accepto" }).click();
 console.log("Traspàs:", await page.locator(".last-move").innerText());
 const after = decodeState(Uint8Array.from(Buffer.from(JSON.parse((await page.evaluate(() => localStorage.getItem("escarras-partida-v1")))!).state, "base64")));
 console.log("Paraules aprovades:", after.approvedWords.length, "· fitxes al tauler:", after.board.filter(Boolean).length);

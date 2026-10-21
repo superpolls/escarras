@@ -262,6 +262,8 @@ export function checkPlay(state: GameState, placements: readonly Placement[], is
 
 /** Jugador actiu següent en l'ordre de joc. */
 const nextInOrder = (s: GameState, p: number) => s.order[(s.order.indexOf(p) + 1) % s.order.length]!;
+/** Jugador que juga després de qui té el torn. */
+export const nextPlayer = (s: GameState) => nextInOrder(s, s.current);
 
 /** Treu un jugador del joc: les seves fitxes tornen a la bossa, que es remena (D-13, D-14). */
 function dropPlayer(s: GameState, p: number, status: "retired" | "removed"): void {
@@ -278,19 +280,15 @@ function dropPlayer(s: GameState, p: number, status: "retired" | "removed"): voi
     if (s.removal.target === p) s.removal = null;
     else s.removal.votes = s.removal.votes.filter(v => v !== p);
   }
-  if (s.proposal) {
-    if (s.proposal.player === p) s.proposal = null;
-    else s.proposal.approvals = s.proposal.approvals.filter(v => v !== p);
-  }
+  // Si marxa qui havia d'aprovar, l'aprovació passa al següent, que es calcula sobre l'ordre nou
+  if (s.proposal?.player === p) s.proposal = null;
   s.scoreless = 0;
 }
 
-/** Qui ha d'aprovar la proposta en curs (D-21). */
-export function requiredApprovers(s: GameState): number[] {
+/** Qui ha d'aprovar la proposta en curs: el jugador següent en l'ordre de torns (D-21). */
+export function proposalApprover(s: GameState): number | null {
   const pr = s.proposal;
-  if (!pr) return [];
-  if (pr.quorum === "next") return s.order.length > 1 ? [nextInOrder(s, pr.player)] : [];
-  return activePlayers(s).filter(p => p !== pr.player);
+  return pr && s.order.length > 1 ? nextInOrder(s, pr.player) : null;
 }
 
 /** Col·loca les fitxes d'una jugada vàlida, suma els punts i roba (19). Retorna els punts. */
@@ -307,21 +305,6 @@ function doPlay(s: GameState, actor: number, placements: readonly Placement[], i
   draw(s, pl.rack, RACK_SIZE - pl.rack.length); // (19)
   s.scoreless = 0; // una jugada vàlida fa avançar la partida, encara que valgui 0 punts (D-05)
   return { score: check.result.score, placements: sorted };
-}
-
-/** Si tots els que han d'aprovar ho han fet, les paraules s'accepten i la jugada s'aplica (D-21). */
-function settleProposal(s: GameState, isWord: IsWord): { mover: number; score: number } | null {
-  const pr = s.proposal;
-  if (!pr) return null;
-  const required = requiredApprovers(s);
-  if (required.length === 0 || !required.every(p => pr.approvals.includes(p))) return null;
-  const check = checkPlay(s, pr.placements, isWord);
-  if (!check.ok && check.error.code === "invalid-words") {
-    for (const w of check.error.words) s.approvedWords.push(wordToTiles(w)!);
-  }
-  const { score } = doPlay(s, pr.player, pr.placements, isWord);
-  s.proposal = null;
-  return { mover: pr.player, score };
 }
 
 /** Si tots els altres actius han votat, el jugador queda tret (D-14). */
@@ -378,19 +361,27 @@ export function applyAction(state: GameState, action: Action, isWord: IsWord, ac
       if (check.ok) fail({ code: "not-allowed" }); // és vàlida: s'ha de jugar directament
       else if (check.error.code !== "invalid-words") fail(check.error); // només per paraules, no per posició
       const placements = [...action.placements].sort((a, b) => a.index - b.index).map(x => ({ index: x.index, tile: x.tile, letter: x.letter }));
-      s.proposal = { player: actor, placements, quorum: action.quorum, approvals: [] };
-      canonical = { type: "propose", placements, quorum: action.quorum };
+      s.proposal = { player: actor, placements };
+      canonical = { type: "propose", placements };
       break;
     }
     case "approve": {
-      if (!s.proposal || !requiredApprovers(s).includes(actor)) fail({ code: "not-allowed" });
-      if (!s.proposal!.approvals.includes(actor)) s.proposal!.approvals.push(actor);
-      s.proposal!.approvals.sort((a, b) => a - b);
+      // L'aprovació del jugador següent n'hi ha prou: les paraules s'accepten i la jugada s'aplica (D-21)
+      const pr = s.proposal;
+      if (!pr || proposalApprover(s) !== actor) return fail({ code: "not-allowed" });
+      const check = checkPlay(s, pr.placements, isWord);
+      if (!check.ok && check.error.code === "invalid-words") {
+        for (const w of check.error.words) s.approvedWords.push(wordToTiles(w)!);
+      }
+      score = doPlay(s, pr.player, pr.placements, isWord).score;
+      s.proposal = null;
+      mover = pr.player;
+      played = true;
       canonical = { type: "approve" };
       break;
     }
     case "reject": {
-      if (!s.proposal || (s.proposal.player !== actor && !requiredApprovers(s).includes(actor))) fail({ code: "not-allowed" });
+      if (!s.proposal || (s.proposal.player !== actor && proposalApprover(s) !== actor)) fail({ code: "not-allowed" });
       s.proposal = null;
       canonical = { type: "reject" };
       break;
@@ -476,12 +467,6 @@ export function applyAction(state: GameState, action: Action, isWord: IsWord, ac
   // Si el jugador amenaçat de ser tret actua, la votació s'anul·la (D-14)
   if (s.removal?.target === actor) s.removal = null;
   settleRemoval(s);
-  const settled = settleProposal(s, isWord);
-  if (settled) {
-    mover = settled.mover;
-    score = settled.score;
-    played = true;
-  }
 
   if (mover !== null) {
     const m = s.players[mover]!;
