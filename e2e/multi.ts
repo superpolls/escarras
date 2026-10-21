@@ -102,6 +102,10 @@ await waitUntil(sameState, 8000, "l'aprovació arriba als dos mòbils");
 s = await state(A.page);
 log("Paraules aprovades:", s.approvedWords.length, "· nom canviat:", s.players.map(x => x.name).join(", "));
 
+// Amb connexió, qui espera no veu cap botó de QR (la jugada arriba sola)
+const waitingPage = other(await turnOf(await state(A.page)));
+log("Botons de QR amb connexió:", await waitingPage.getByRole("button", { name: /QR/ }).count());
+
 // 3. Sense connexió: QR
 await A.ctx.setOffline(true);
 await B.ctx.setOffline(true);
@@ -117,7 +121,7 @@ for (let k = 0; k < 2; k++) {
   const code = (await qr.getAttribute("data-code"))!;
   await p.getByRole("button", { name: "Fet" }).click();
   const r = other(p);
-  await r.getByRole("button", { name: "Escaneja el QR" }).click();
+  await r.getByRole("button", { name: /escaneja el QR quan et toqui/ }).click();
   await r.getByLabel("Enllaç o codi").fill(code);
   await r.getByRole("button", { name: "D'acord" }).click();
   await waitUntil(sameState, 5000, "el QR passa la jugada");

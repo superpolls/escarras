@@ -81,13 +81,16 @@ export function App() {
     if (!session) return;
     const un = session.subscribe(force);
     const un2 = session.onMyTurn(() => vibrate(200));
-    const kick = () => { if (document.visibilityState === "visible") session.kick(); };
+    const kick = () => session.kick();
+    const onVisible = () => { if (document.visibilityState === "visible") session.kick(); };
     window.addEventListener("online", kick);
-    document.addEventListener("visibilitychange", kick);
+    window.addEventListener("offline", kick);
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       un(); un2();
       window.removeEventListener("online", kick);
-      document.removeEventListener("visibilitychange", kick);
+      window.removeEventListener("offline", kick);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [session]);
 

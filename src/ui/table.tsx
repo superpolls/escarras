@@ -259,14 +259,15 @@ export function Table({ session, isWord, onHome, onInvite, onScan, onQr }: {
   // ---------------------------------------------------------------- espera
   const single = seats.length === 1 ? seats[0]! : null;
   const rack = single !== null ? h.players[single]?.rack ?? [] : [];
-  const online = session.net === "synced";
+  // Sense connexió (o sense servidor), la jugada només pot arribar per QR
+  const offline = session.net === "offline" || session.net === "pending" || session.net === "none" || navigator.onLine === false;
   const waiting = h.ended ? "La partida s'ha acabat."
     : seats.length === 0 ? (session.wantSeat !== null ? `Esperant que un altre jugador confirmi que ets ${name(session.wantSeat)}…` : "Aquest mòbil encara no porta cap jugador.")
     : h.proposal ? (approverMine || proposerMine ? "" : `${name(h.proposal.player)} ha demanat a ${approver !== null ? name(approver) : "el següent"} que accepti una paraula.`)
-    : `Torn: ${name(h.current)}.${online ? " La jugada t'arribarà sola." : " Quan hagi jugat, escaneja el seu QR."}`;
-  // Amb connexió la jugada arriba sola: escanejar queda com a opció secundària
-  const scanBtn = <button class={online ? "" : "primary"} onClick={onScan}>Escaneja el QR</button>;
-  const showBtn = <button onClick={() => onQr({ text: packetToText(session.qrPacket()), title: `Ensenya-ho a ${name(h.current)}`, note: "Així tindrà la partida al dia." })}>Mostra el QR</button>;
+    : `Torn: ${name(h.current)}.${offline ? "" : " La jugada t'arribarà sola."}`;
+  // Amb connexió la jugada arriba sola: els botons de QR només surten sense connexió (al menú hi són sempre)
+  const scanBtn = offline ? <button class="primary" onClick={onScan}>Sense connexió: escaneja el QR quan et toqui</button> : null;
+  const showBtn = offline ? <button onClick={() => onQr({ text: packetToText(session.qrPacket()), title: `Ensenya-ho a ${name(h.current)}`, note: "Així tindrà la partida al dia." })}>Mostra el meu QR</button> : null;
   const undoBtn = session.canUndo() && h.last ? <button onClick={() => { session.undo(); after(); }}>Desfés</button> : null;
 
   // Un sol jugador en aquest mòbil: mentre espera, pot ordenar l'atril i provar jugades (no compten)

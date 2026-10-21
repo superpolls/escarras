@@ -224,6 +224,12 @@ export class Session {
 
   private async sync(): Promise<void> {
     if (!this.relay || !this.keys || this.closed) return;
+    // El navegador ja sap que no hi ha xarxa: no cal esperar que falli una petició
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      this.setNet(this.pending ? "pending" : "offline");
+      this.scheduleRetry();
+      return;
+    }
     if (this.busy) { this.again = true; return; }
     this.busy = true;
     try {
