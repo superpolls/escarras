@@ -109,3 +109,15 @@ Es construeix en mig segon amb `npm run lexicon`. El script comprova primer l'em
 **Concurrència optimista amb rebase** (per a la sincronització en línia, M4b). Si dues persones actuen alhora, el servidor accepta la primera. El mòbil de la segona rep la versió nova, hi torna a aplicar la seva acció i la publica. No es bloqueja mai res; el conflicte, poc freqüent, es resol quan passa.
 
 **Lliçó 3 · ordre canònic.** La simulació va trobar que canviar les fitxes A, B, C o C, A, B donava bosses diferents: el resultat de remenar depenia de l'ordre en què les fitxes tornaven a la bossa. Al mòbil de qui jugava sortia una cosa i, en verificar-ho, al mòbil de qui ho rebia una altra. Ara les fitxes s'ordenen sempre abans d'aplicar l'acció. **Regla general: si un resultat ha de ser idèntic a tot arreu, cap detall arbitrari (ordre, hora, idioma) no hi pot influir.**
+
+## 7. M3 · La interfície en un sol mòbil
+
+**Dos tipus d'estat.** L'estat del joc (tauler, atrils, punts) el gestiona el motor. L'estat de la pantalla (fitxa seleccionada, fitxes posades sense confirmar, zoom) viu només al mòbil. Res no arriba a la partida fins que es prem «Juga» i el motor ho valida.
+
+**Flux en una sola direcció.** Acció → canvia l'estat → la pantalla es redibuixa a partir de l'estat. La pantalla mai no es modifica a mà, i per això no hi pot haver incoherències.
+
+**Components (Preact).** La pantalla es fa amb peces que reben dades i dibuixen: casella, fitxa, tauler, atril, marcador. Preact ocupa 4 KB; tota l'app, 19 KB comprimida, més el diccionari (250 KB).
+
+**Compilar (Vite).** Converteix el TypeScript en fitxers optimitzats per al navegador, a la carpeta `app/`, que GitHub Pages publica.
+
+**Prova automàtica al navegador (Playwright).** Un programa obre l'app en un Chrome amb mida de mòbil i hi juga: crea una partida de 3, busca la millor primera paraula amb el diccionari i la col·loca tocant fitxes i caselles, desfà, canvia fitxes, prova una jugada no vàlida, amplia el tauler, passa, recarrega la pàgina i comprova la pantalla final. Fa captures de cada pas i comprova que no hi ha cap error a la consola.
