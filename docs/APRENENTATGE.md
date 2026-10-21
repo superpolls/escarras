@@ -75,3 +75,25 @@ Es construeix en mig segon amb `npm run lexicon`. El script comprova primer l'em
 - Mostra de 71 formes valencianes i balears: totes hi són. **Lliçó:** tres errors de la primera mostra eren meus (PUGUERA → POGUERA, ESSE → EIXE): les llistes de prova també s'han de verificar contra una font.
 
 **Què és un test automàtic:** un programa que crida el codi amb casos coneguts i compara el resultat amb l'esperat. S'executa cada vegada que es canvia alguna cosa (`npm test`). Si una regla es trenca, se sap a l'instant.
+
+## 5. M2 · El motor del joc
+
+**Codi pur.** El motor és una funció: *estat + jugada → estat nou*. No toca la pantalla, la xarxa ni el rellotge. Dos mòbils que apliquen la mateixa jugada al mateix estat obtenen exactament el mateix resultat, bit a bit.
+
+**Generador determinista (xoshiro128\*\*).** Seqüència que sembla aleatòria però queda fixada per la llavor de 128 bits. Tots els mòbils barregen la bossa igual sense comunicar-se. S'ha comprovat que dona els mateixos números que la implementació de referència en C. Prohibit `Math.random`: cada navegador el fa diferent.
+
+**Fisher-Yates.** Barreja recorrent la llista del final al principi i intercanviant cada element amb un de l'atzar dels que queden. Tots els ordres són igual de probables.
+
+**Biaix del mòdul.** Per treure un número de 0 a 5 d'un generador de 32 bits, `x % 6` afavoreix lleugerament els números petits, perquè 2³² no és múltiple de 6. Es descarten els valors del tram final i es torna a tirar.
+
+**Serialització canònica i empremta.** L'estat es converteix a bits sempre en el mateix ordre (unes 220-280 bytes). El SHA-256 d'aquests bytes és l'empremta. Cada estat porta l'empremta de l'anterior, i això forma una **cadena**: si algú canvia un estat antic, la cadena es trenca.
+
+**Verificació per repetició.** El mòbil que rep una jugada la torna a aplicar amb el seu propi motor i comprova que el resultat és idèntic. Així detecta punts inflats, atrils canviats o jugades fora de torn sense necessitat de confiar en ningú.
+
+**Simulació amb invariants.** 1.000 partides senceres amb jugades aleatòries. Després de cada jugada es comprova: sempre 100 fitxes amb la distribució oficial, cap atril de més de 7, la versió puja d'una en una, codificar i descodificar dona el mateix, i la verificació per repetició passa. Un invariant és una propietat que ha de ser certa sempre, passi el que passi.
+
+**Lliçó 1 · un error real trobat per la simulació.** Una partida va fer canvis de senyors més de tres vegades seguides i el comptador no hi cabia. El reglament diu que, després del procediment de la tercera vegada, el jugador es queda les fitxes. Corregit, i amb un test nou.
+
+**Lliçó 2 · un generador dolent amaga errors.** La primera simulació feia servir els bits baixos d'un generador congruencial lineal, que repeteixen un patró curt (0, 1, 2, 3, 0, 1…). Cap partida acabava per bloqueig i l'error anterior no apareixia. Amb els bits alts, va sortir de seguida. Els tests aleatoris també necessiten bon atzar.
+
+**Decisions:** totes les interpretacions del reglament són a `DECISIONS.md`.
