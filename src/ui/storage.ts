@@ -4,7 +4,6 @@
  */
 import { decodeState } from "../core/codec";
 import type { GameState } from "../core/types";
-import { fromB64u, toB64u } from "../sync/bytes";
 import { newDeviceId, newGameKey } from "../sync/crypto";
 import { commitLocal, newReplica, serializeReplica } from "../sync/replica";
 import type { Store } from "../sync/session";
@@ -97,5 +96,28 @@ export function setPendingName(gameId: string, player: number, name: string | nu
   put(NAME_KEY, JSON.stringify({ gameId, names }));
 }
 
-export const keyToText = toB64u;
-export const keyFromText = fromB64u;
+
+/**
+ * Jugada de prova: les fitxes que el jugador ha posat al tauler mentre esperava (o durant el seu torn),
+ * només en aquest mòbil. Es desa per fitxa, no per posició de l'atril.
+ */
+const DRAFT_KEY = "escarras-proves-v1";
+export interface DraftTile { index: number; tile: number; letter: number }
+
+export function loadDraft(gameId: string, player: number): DraftTile[] {
+  try {
+    const j = JSON.parse(get(DRAFT_KEY) ?? "null") as { gameId: string; drafts: Record<string, DraftTile[]> } | null;
+    return j?.gameId === gameId ? j.drafts[player] ?? [] : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveDraft(gameId: string, player: number, tiles: DraftTile[]): void {
+  try {
+    const j = JSON.parse(get(DRAFT_KEY) ?? "null") as { gameId: string; drafts: Record<string, DraftTile[]> } | null;
+    const drafts = j?.gameId === gameId ? j.drafts : {};
+    drafts[player] = tiles;
+    put(DRAFT_KEY, JSON.stringify({ gameId, drafts }));
+  } catch { /* res */ }
+}

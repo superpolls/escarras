@@ -10,7 +10,7 @@ import {
 import { BLANK, TILE_LABELS, TILE_VALUES, VOWELS } from "../core/tiles";
 import type { Action, GameState, Placement } from "../core/types";
 import { Scorebar } from "./scorebar";
-import { loadArrangement, saveArrangement } from "./storage";
+import { loadArrangement, loadDraft, saveArrangement, saveDraft } from "./storage";
 import { controlCode, vibrate } from "./support";
 import { errorText, points } from "./text";
 
@@ -25,9 +25,9 @@ type DragSource = { kind: "rack"; slot: number } | { kind: "board"; index: numbe
 interface Drag { source: DragSource; x: number; y: number; over: number | null; overRack: boolean; insert: number | null }
 
 /** Ordre de l'atril: el que el jugador s'havia preparat, i les fitxes noves al final. */
-function arrangedOrder(st: GameState): number[] {
-  const rack = st.players[st.current]!.rack;
-  const saved = loadArrangement(st.gameId, st.current) ?? [];
+function arrangedOrder(st: GameState, me: number): number[] {
+  const rack = st.players[me]!.rack;
+  const saved = loadArrangement(st.gameId, me) ?? [];
   const order: number[] = [];
   for (const t of saved) {
     const slot = rack.findIndex((x, i) => x === t && !order.includes(i));
@@ -35,6 +35,25 @@ function arrangedOrder(st: GameState): number[] {
   }
   rack.forEach((_, i) => { if (!order.includes(i)) order.push(i); });
   return order;
+}
+
+/**
+ * Fitxes de prova desades, sobre el tauler i l'atril d'ara. Les que cauen sobre una fitxa nova
+ * (o que ja no són a l'atril) tornen a l'atril; les altres es queden on eren.
+ */
+function fromDraft(st: GameState, me: number): { pending: Pending[]; dropped: number } {
+  const rack = st.players[me]?.rack ?? [];
+  const used = new Set<number>();
+  const pending: Pending[] = [];
+  let dropped = 0;
+  if (st.ended) return { pending, dropped };
+  for (const d of loadDraft(st.gameId, me)) {
+    const slot = rack.findIndex((t, i) => t === d.tile && !used.has(i));
+    if (st.board[d.index] || pending.some(p => p.index === d.index) || slot < 0) { dropped += 1; continue; }
+    used.add(slot);
+    pending.push({ index: d.index, slot, letter: d.letter });
+  }
+  return { pending, dropped };
 }
 
 /** Mou un element d'una llista a una altra posició. */
@@ -54,7 +73,7 @@ export function TileFace({ tile, letter }: { tile: number; letter: number }) {
   );
 }
 
-export function Board({ state, pending, bad, good, dropCell, zoom, onCell, onPendingDown, proposed = [] }: {
+export function Board({ state, pending, bad, good, dropCell, zoom, onCell, onPendingDown, proposed = [], me = state.current, draft = false }: {
   state: GameState;
   pending: Pending[];
   bad: Set<number>;
@@ -65,13 +84,17 @@ export function Board({ state, pending, bad, good, dropCell, zoom, onCell, onPen
   onPendingDown: (e: PointerEvent, i: number) => void;
   /** Fitxes d'una jugada pendent d'aprovació (D-21), per veure-la al tauler. */
   proposed?: Placement[];
+  /** Jugador de qui són les fitxes que es col·loquen. */
+  me?: number;
+  /** Jugada de prova, fora del torn: es pinta d'un altre color. */
+  draft?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const last = useMemo(() => {
     const a = state.last?.action;
     return new Set(a?.type === "play" ? a.placements.map(p => p.index) : []);
   }, [state]);
-  const rack = state.players[state.current]!.rack;
+  const rack = state.players[me]!.rack;
   const byCell = new Map(pending.map(p => [p.index, p]));
   const shown = new Map(proposed.map(p => [p.index, p]));
 
@@ -94,7 +117,7 @@ export function Board({ state, pending, bad, good, dropCell, zoom, onCell, onPen
           const prem = PREMIUMS[i];
           const cls = [
             "cell", prem ? `p-${prem}` : "", c ? "tile" : "", c?.tile === BLANK ? "blank" : "",
-            p ? "tile pending" : "", p && bad.has(i) ? "bad" : "", p && good ? "good" : "", p && rack[p.slot] === BLANK ? "blank" : "",
+            p ? "tile pending" : "", p && draft ? "draft" : "", p && bad.has(i) ? "bad" : "", p && good ? "good" : "", p && rack[p.slot] === BLANK ? "blank" : "",
             last.has(i) ? "last" : "", dropCell === i && !c ? "drop" : "", q && !c ? "tile proposed" : "",
           ].join(" ");
           return (
@@ -117,7 +140,7 @@ export function Modal({ children }: { children: preact.ComponentChildren }) {
   return <div class="modal-back"><div class="modal" role="dialog">{children}</div></div>;
 }
 
-export function GameScreen({ state, isWord, onCommit, onMenu, approverHere, net, banners }: {
+export function GameScreen({ state, isWord, onCommit, onMenu, approverHere, net, banners, me = state.current, mode = "turn", waitText, waitActions }: {
   state: GameState;
   isWord: IsWord;
   onCommit: (next: GameState) => void;
@@ -126,12 +149,23 @@ export function GameScreen({ state, isWord, onCommit, onMenu, approverHere, net,
   approverHere: boolean;
   net?: string;
   banners?: preact.ComponentChildren;
+  /** Jugador d'aquest mòbil (per defecte, a qui toca). */
+  me?: number;
+  /** "draft": encara no és el seu torn; pot ordenar l'atril i provar jugades que no compten. */
+  mode?: "turn" | "draft";
+  waitText?: string;
+  waitActions?: preact.ComponentChildren;
 }) {
-  const me = state.current;
+  const draftMode = mode === "draft";
+  // Per validar una prova fora del torn, es mira com si ja li toqués
+  const view = useMemo(() => (draftMode ? { ...state, current: me } : state), [state, me, draftMode]);
   const player = state.players[me]!;
-  const [pending, setPending] = useState<Pending[]>([]);
+  // Nou torn, atril o tauler: les fitxes de prova es tornen a situar; només tornen a l'atril les que trepitgen
+  const turnKey = `${state.gameId}:${me}:${player.rack.join(",")}:${state.board.filter(Boolean).length}:${state.ended ?? ""}`;
+  const [held, setHeld] = useState(() => ({ key: turnKey, pending: fromDraft(state, me).pending }));
+  const pending = held.key === turnKey ? held.pending : fromDraft(state, me).pending;
   const [selected, setSelected] = useState<number | null>(null);
-  const [order, setOrder] = useState<number[]>(() => arrangedOrder(state));
+  const [order, setOrder] = useState<number[]>(() => arrangedOrder(state, me));
   const [zoom, setZoom] = useState(false);
   const [blankCell, setBlankCell] = useState<{ index: number; slot: number } | null>(null);
   const [exchange, setExchange] = useState<Set<number> | null>(null);
@@ -142,28 +176,35 @@ export function GameScreen({ state, isWord, onCommit, onMenu, approverHere, net,
   const [askApproval, setAskApproval] = useState(false);
 
   // Els gestos d'arrossegar es processen fora del cicle de Preact: necessiten l'estat més recent
-  const latest = useRef({ pending, state, player, order });
-  latest.current = { pending, state, player, order };
+  const latest = useRef({ pending, state, player, order, turnKey, me });
+  latest.current = { pending, state, player, order, turnKey, me };
   const suppressClick = useRef(false);
 
-  // Nou torn, atril o tauler: reinicia l'estat de pantalla. Si arriba una versió que no els toca
-  // (un vot o un abandonament d'un altre mòbil), les fitxes que s'estan col·locant es conserven.
-  const turnKey = `${state.gameId}:${state.turn === 0 ? 0 : state.current}:${player.rack.join(",")}:${state.board.filter(Boolean).length}`;
+  /** Canvia les fitxes posades i les desa com a prova (sobreviuen a recarregar i al canvi de torn). */
+  const setPending = (p: Pending[]) => {
+    const { turnKey: key, state: st, player: pl, me: who } = latest.current;
+    setHeld({ key, pending: p });
+    saveDraft(st.gameId, who, p.map(x => ({ index: x.index, tile: pl.rack[x.slot]!, letter: x.letter })));
+  };
+
   useEffect(() => {
-    setPending([]); setSelected(null); setExchange(null); setOffer(null); setDrag(null);
-    setOrder(arrangedOrder(state));
+    setSelected(null); setExchange(null); setOffer(null); setDrag(null);
+    setOrder(arrangedOrder(state, me));
+    const d = fromDraft(state, me);
+    setPending(d.pending);
+    if (d.dropped) setFlash(d.dropped === 1 ? "Una fitxa de la teva prova queia sobre una lletra nova: ha tornat a l'atril." : `${d.dropped} fitxes de la teva prova queien sobre lletres noves: han tornat a l'atril.`);
   }, [turnKey]);
 
   /** Canvia l'ordre de l'atril i el recorda per als torns següents. */
   const updateOrder = (o: number[]) => {
     setOrder(o);
-    const { state: st, player: pl } = latest.current;
-    saveArrangement(st.gameId, st.current, o.map(s => pl.rack[s]!));
+    const { state: st, player: pl, me: who } = latest.current;
+    saveArrangement(st.gameId, who, o.map(s => pl.rack[s]!));
   };
 
   const used = new Set(pending.map(p => p.slot));
   const placements: Placement[] = pending.map(p => ({ index: p.index, tile: player.rack[p.slot]!, letter: p.letter }));
-  const check = pending.length ? checkPlay(state, placements, isWord) : null;
+  const check = pending.length ? checkPlay(view, placements, isWord) : null;
 
   // Fitxes en vermell: les de les paraules no vàlides, o totes si el problema és de posició
   const bad = new Set<number>();
@@ -171,6 +212,12 @@ export function GameScreen({ state, isWord, onCommit, onMenu, approverHere, net,
     const cells = check.error.code === "invalid-words" ? check.error.cells : pending.map(p => p.index);
     for (const c of cells) if (pending.some(p => p.index === c)) bad.add(c);
   }
+
+  /** Desa una acció: la prova queda buida, perquè les fitxes ja s'han jugat (o canviat). */
+  const commit = (n: GameState) => {
+    setPending([]);
+    onCommit(n);
+  };
 
   const tryApply = (action: Action): GameState | null => {
     try {
@@ -279,7 +326,7 @@ export function GameScreen({ state, isWord, onCommit, onMenu, approverHere, net,
     const next = tryApply({ type: "play", placements });
     if (!next) return;
     if (senyorsAvailable(next, me)) setOffer(next);
-    else onCommit(next);
+    else commit(next);
   };
 
   const shuffleRack = () => {
@@ -290,11 +337,11 @@ export function GameScreen({ state, isWord, onCommit, onMenu, approverHere, net,
 
   const status = flash
     ?? (exchange ? (state.bag.length < 7 ? errorText({ code: "bag-too-small" }) : "Toca les fitxes que vols canviar.")
-    : !check ? "Arrossega una fitxa al tauler, o toca la fitxa i després la casella."
-    : check.ok ? `Aquesta jugada: ${points(check.result.score)} · ${check.result.words.map(w => w.letters.map(l => TILE_LABELS[l]).join("")).join(", ")}${check.result.bingo ? " · scrabble +50!" : ""}`
-    : errorText(check.error));
+    : !check ? (draftMode ? "Mentre esperes, pots ordenar l'atril i provar jugades: no compten fins que et toqui." : "Arrossega una fitxa al tauler, o toca la fitxa i després la casella.")
+    : check.ok ? `${draftMode ? "Prova" : "Aquesta jugada"}: ${points(check.result.score)} · ${check.result.words.map(w => w.letters.map(l => TILE_LABELS[l]).join("")).join(", ")}${check.result.bingo ? " · scrabble +50!" : ""}`
+    : `${draftMode ? "Prova: " : ""}${errorText(check.error)}`);
 
-  const startOffer = senyorsAtTurnStart(state, me) && pending.length === 0 && !exchange;
+  const startOffer = !draftMode && senyorsAtTurnStart(state, me) && pending.length === 0 && !exchange;
   // Paraules que el diccionari no té, amb la posició correcta: es pot demanar que les aprovin (D-21)
   const unknownWords = check && !check.ok && check.error.code === "invalid-words" ? check.error.words : null;
   // Qui ha d'acceptar-la: el jugador següent (D-21)
@@ -305,8 +352,8 @@ export function GameScreen({ state, isWord, onCommit, onMenu, approverHere, net,
     if (!n) return;
     const approver = proposalApprover(n);
     // Si el jugador següent és en aquest mòbil, ho accepta aquí mateix; si no, la proposta li arriba pel servidor o pel QR
-    onCommit(n); // la proposta és una versió; l'acceptació, la següent
-    if (approverHere && approver !== null) onCommit(applyAction(n, { type: "approve" }, isWord, approver));
+    commit(n); // la proposta és una versió; l'acceptació, la següent
+    if (approverHere && approver !== null) commit(applyAction(n, { type: "approve" }, isWord, approver));
   };
   const kind = (rack: number[]) => (rack.every(t => VOWELS.has(t)) ? "vocals" : "consonants");
 
@@ -326,18 +373,20 @@ export function GameScreen({ state, isWord, onCommit, onMenu, approverHere, net,
     <div class={`game${drag ? " dragging" : ""}`}>
       <Scorebar state={state} code={controlCode(state)} onMenu={onMenu} net={net} />
       {banners}
+      {waitText && <p class="waiting" role="status">{waitText}</p>}
       <Board state={state} pending={pending.filter(p => p.index !== dragCell)} bad={bad} good={!!check?.ok}
-        dropCell={drag?.over ?? null} zoom={zoom} onCell={onCell}
+        dropCell={drag?.over ?? null} zoom={zoom} onCell={onCell} me={me} draft={draftMode}
+        proposed={state.proposal?.placements ?? []}
         onPendingDown={(e, i) => startDrag(e, { kind: "board", index: i })} />
       <div class={`status${check && !check.ok && !exchange ? " bad" : check?.ok ? " good" : ""}`} role="status">
         {status}
-        {unknownWords && !exchange && !flash && <button class="ask" onClick={() => setAskApproval(true)}>Demana a {approverName} que l'accepti</button>}
+        {unknownWords && !draftMode && !exchange && !flash && <button class="ask" onClick={() => setAskApproval(true)}>Demana a {approverName} que l'accepti</button>}
       </div>
 
       {startOffer && (
         <div class="banner">
           <span>Tens senyors: set {kind(player.rack)}.</span>
-          <button onClick={() => { const n = tryApply({ type: "senyors" }); if (n) onCommit(n); }}>Canvia les 7 fitxes</button>
+          <button onClick={() => { const n = tryApply({ type: "senyors" }); if (n) commit(n); }}>Canvia les 7 fitxes</button>
         </div>
       )}
 
@@ -360,10 +409,17 @@ export function GameScreen({ state, isWord, onCommit, onMenu, approverHere, net,
         })}
       </div>
 
-      {exchange ? (
+      {draftMode ? (
+        <div class="actions">
+          <button onClick={() => { setPending([]); setSelected(null); }} disabled={!pending.length}>Recull</button>
+          <button onClick={shuffleRack}>Barreja</button>
+          <button onClick={() => setZoom(!zoom)} aria-pressed={zoom}>{zoom ? "Redueix" : "Amplia"}</button>
+          {waitActions}
+        </div>
+      ) : exchange ? (
         <div class="actions">
           <button class="primary" disabled={exchange.size === 0 || state.bag.length < 7}
-            onClick={() => { const n = tryApply({ type: "exchange", tiles: [...exchange].map(s => player.rack[s]!) }); if (n) { if (senyorsAvailable(n, me)) setOffer(n); else onCommit(n); } }}>
+            onClick={() => { const n = tryApply({ type: "exchange", tiles: [...exchange].map(s => player.rack[s]!) }); if (n) { if (senyorsAvailable(n, me)) setOffer(n); else commit(n); } }}>
             Canvia {exchange.size || ""}
           </button>
           <button onClick={() => setExchange(null)}>Cancel·la</button>
@@ -422,7 +478,7 @@ export function GameScreen({ state, isWord, onCommit, onMenu, approverHere, net,
           <h2>Vols passar el torn?</h2>
           <p>No jugaràs cap fitxa en aquest torn.</p>
           <div class="row">
-            <button class="primary" onClick={() => { setConfirmPass(false); const n = tryApply({ type: "pass" }); if (n) onCommit(n); }}>Passa</button>
+            <button class="primary" onClick={() => { setConfirmPass(false); const n = tryApply({ type: "pass" }); if (n) commit(n); }}>Passa</button>
             <button onClick={() => setConfirmPass(false)}>Cancel·la</button>
           </div>
         </Modal>
@@ -434,8 +490,8 @@ export function GameScreen({ state, isWord, onCommit, onMenu, approverHere, net,
           <p>Has robat set {kind(offer.players[me]!.rack)}. Pots canviar les 7 fitxes sense perdre el torn.</p>
           <div class="rack small">{offer.players[me]!.rack.map((t, k) => <span key={k} class="rtile"><TileFace tile={t} letter={t} /></span>)}</div>
           <div class="row">
-            <button class="primary" onClick={() => { const n = swapSenyors(offer, me); if (senyorsAvailable(n, me)) setOffer(n); else { setOffer(null); onCommit(n); } }}>Canvia-les</button>
-            <button onClick={() => { const n = offer; setOffer(null); onCommit(n); }}>Me les quedo</button>
+            <button class="primary" onClick={() => { const n = swapSenyors(offer, me); if (senyorsAvailable(n, me)) setOffer(n); else { setOffer(null); commit(n); } }}>Canvia-les</button>
+            <button onClick={() => { const n = offer; setOffer(null); commit(n); }}>Me les quedo</button>
           </div>
         </Modal>
       )}

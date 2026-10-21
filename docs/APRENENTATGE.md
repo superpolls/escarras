@@ -172,3 +172,5 @@ Es construeix en mig segon amb `npm run lexicon`. El script comprova primer l'em
 **Lliçó 6 · l'estat que es veu ha d'avisar quan canvia.** La pantalla de convidar no mostrava «té mòbil ✓» perquè la sessió actualitzava els seients però no avisava la pantalla. Regla: qualsevol dada que es mostri, quan canvia, ha de provocar que es torni a dibuixar.
 
 **Lliçó 7 · una acció, una versió.** Proposar i acceptar en el mateix mòbil feia dues accions d'un sol cop, i la rèplica ho rebutjava perquè la versió saltava de dos en dos. Cada acció ha de ser una versió pròpia: així qualsevol mòbil la pot verificar repetint-la.
+
+**Jugada de prova (estat de pantalla que sobreviu).** Mentre un altre juga, pots posar fitxes de prova. No formen part de la partida: són «estat de pantalla» desat només al teu mòbil, per fitxes (no per posicions de l'atril). Quan arriba una versió nova, l'app torna a situar la prova sobre el tauler nou i treu només les fitxes que queden sota una lletra nova. Com que la prova es desa a cada moviment, tampoc es perd si recarregues la pàgina.

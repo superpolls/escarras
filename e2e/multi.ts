@@ -49,11 +49,29 @@ let s = await state(A.page);
 let p = await turnOf(s);
 await waitUntil(() => myTurnVisible(p), 8000, "torn del primer jugador");
 const move = firstMove(await state(p))!;
+
+// Mentre espera, l'altre prepara una prova: una fitxa on jugarà el primer i una altra lluny
+const waiter = other(p);
+const ws = await state(waiter);
+const wSeat = (await seats(waiter))[0]!;
+const free = ws.players[wSeat]!.rack.map((t, i) => (t === 0 ? -1 : i)).filter(i => i >= 0);
+await place(waiter, { slots: [free[0]!, free[1]!], cells: [move.cells[0]!, 0] });
+const drafts = await waiter.locator(".cell.pending.draft").count();
+log("Prova mentre espera:", drafts, "fitxes lila ·", await waiter.locator(".status").innerText());
+await waiter.screenshot({ path: `${OUT}/m0-prova.png` });
+if (drafts !== 2) throw new Error("La prova no es veu al tauler");
+
 await place(p, move);
 await p.getByRole("button", { name: "Juga" }).click();
 await keepSenyors(p);
 await waitUntil(sameState, 8000, "la primera jugada arriba a l'altre mòbil");
 log("Jugada 1 rebuda sense QR. Estat:", await other(p).locator(".net").innerText());
+await waitUntil(() => myTurnVisible(waiter), 8000, "torn de qui esperava");
+const kept = await waiter.locator(".cell.pending").evaluateAll(cs => cs.map(c => Number(c.getAttribute("data-i"))));
+log("En arribar el torn, queden a la prova les caselles:", kept.join(","), "·", await waiter.locator(".status").innerText());
+await waiter.screenshot({ path: `${OUT}/m0-prova-torn.png` });
+if (kept.length !== 1 || kept[0] !== 0) throw new Error("Només havia de tornar a l'atril la fitxa trepitjada");
+await waiter.getByRole("button", { name: "Recull" }).click();
 
 // Paraula fora del diccionari: una fitxa sota la primera lletra; l'accepta l'altre mòbil
 s = await state(A.page);

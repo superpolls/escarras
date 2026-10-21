@@ -145,3 +145,9 @@ canvas.qr { width: min(92vw, 460px); height: auto; image-rendering: pixelated; d
 .cell.proposed { background: #ffe8b0; box-shadow: inset 0 0 0 2px #c89b18; }
 .add { margin: 12px 0; display: grid; gap: 8px; }
 .add input { margin: 0; }
+
+/* Jugada de prova (fora del torn): fitxes lila, amb la vora verda o vermella segons si valdria */
+.cell.pending.draft { background: #e4dcff; box-shadow: inset 0 0 0 2px #6b4fd8; }
+.cell.pending.draft.good { background: #e4dcff; box-shadow: inset 0 0 0 3px var(--good); }
+.cell.pending.draft.bad { background: #e4dcff; box-shadow: inset 0 0 0 3px var(--bad); }
+.waiting { margin: 6px 8px 0; padding: 8px 10px; background: #f3f3f3; border-radius: 10px; font-size: 16px; }

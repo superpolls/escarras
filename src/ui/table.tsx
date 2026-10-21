@@ -232,6 +232,7 @@ export function Table({ session, isWord, onHome, onInvite, onScan, onQr }: {
     return (
       <>
         <GameScreen state={h} isWord={isWord} onCommit={commit} onMenu={() => setMenu("main")} approverHere={session.holds(next)} net={net}
+          me={h.current} mode="turn"
           banners={<>{h.last && h.last.player !== h.current && <LastMove session={session} />}{banners}</>} />
         {overlays}
       </>
@@ -263,6 +264,24 @@ export function Table({ session, isWord, onHome, onInvite, onScan, onQr }: {
     : seats.length === 0 ? (session.wantSeat !== null ? `Esperant que un altre jugador confirmi que ets ${name(session.wantSeat)}…` : "Aquest mòbil encara no porta cap jugador.")
     : h.proposal ? (approverMine || proposerMine ? "" : `${name(h.proposal.player)} ha demanat a ${approver !== null ? name(approver) : "el següent"} que accepti una paraula.`)
     : `Torn: ${name(h.current)}.${online ? " La jugada t'arribarà sola." : " Quan hagi jugat, escaneja el seu QR."}`;
+  // Amb connexió la jugada arriba sola: escanejar queda com a opció secundària
+  const scanBtn = <button class={online ? "" : "primary"} onClick={onScan}>Escaneja el QR</button>;
+  const showBtn = <button onClick={() => onQr({ text: packetToText(session.qrPacket()), title: `Ensenya-ho a ${name(h.current)}`, note: "Així tindrà la partida al dia." })}>Mostra el QR</button>;
+  const undoBtn = session.canUndo() && h.last ? <button onClick={() => { session.undo(); after(); }}>Desfés</button> : null;
+
+  // Un sol jugador en aquest mòbil: mentre espera, pot ordenar l'atril i provar jugades (no compten)
+  if (single !== null && h.players[single]?.status === "active" && !(h.proposal && proposerMine)) {
+    return (
+      <>
+        <GameScreen state={h} isWord={isWord} onCommit={commit} onMenu={() => setMenu("main")} approverHere={false} net={net}
+          me={single} mode="draft" waitText={waiting || undefined}
+          banners={<><LastMove session={session} />{banners}</>}
+          waitActions={<>{scanBtn}{showBtn}{undoBtn}</>} />
+        {overlays}
+      </>
+    );
+  }
+
   return (
     <div class="game">
       <Scorebar state={h} code={controlCode(h)} onMenu={() => setMenu("main")} net={net} />
@@ -273,12 +292,10 @@ export function Table({ session, isWord, onHome, onInvite, onScan, onQr }: {
       <p class="status" role="status">{waiting}</p>
       {rack.length > 0 && <div class="rack small" aria-label="El teu atril">{rack.map((t, k) => <span key={k} class="rtile"><TileFace tile={t} letter={t} /></span>)}</div>}
       <div class="actions">
-        <button class="primary" onClick={onScan}>Escaneja el QR</button>
-        <button onClick={() => onQr({ text: packetToText(session.qrPacket()), title: `Ensenya-ho a ${name(h.current)}`, note: "Així tindrà la partida al dia." })}>Mostra el QR</button>
+        {scanBtn}
+        {showBtn}
         <button onClick={() => setZoom(!zoom)} aria-pressed={zoom}>{zoom ? "Redueix" : "Amplia"}</button>
-        {session.canUndo() && h.last && (
-          <button onClick={() => { session.undo(); after(); }}>Desfés</button>
-        )}
+        {undoBtn}
       </div>
       {overlays}
     </div>
