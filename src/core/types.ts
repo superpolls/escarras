@@ -13,18 +13,36 @@ export interface Placement {
   letter: number; // fitxa que representa (igual que `tile` si no és escarràs)
 }
 
+/**
+ * Accions. Qui les pot fer (D-12):
+ * - play, exchange, pass, senyors, join, rejoin: el mòbil de qui té el torn.
+ * - leave, vote-remove: el mòbil del jugador que actua, en qualsevol moment.
+ */
 export type Action =
   | { type: "play"; placements: Placement[] }
   | { type: "exchange"; tiles: number[] }
-  | { type: "pass" };
+  | { type: "pass" }
+  /** Canvi de senyors a l'inici del propi torn, amb l'atril inicial o d'entrada (D-03). */
+  | { type: "senyors" }
+  /** Abandonar la partida voluntàriament (D-13). */
+  | { type: "leave" }
+  /** Vot per treure un jugador absent; cal el vot de tots els altres actius (D-14). */
+  | { type: "vote-remove"; target: number }
+  /** Acceptar un jugador nou (D-15). */
+  | { type: "join"; name: string }
+  /** Acceptar el retorn d'un jugador retirat o tret (D-15). */
+  | { type: "rejoin"; player: number };
 
 export interface LastAction {
   player: number;
   action: Action | { type: "undo" };
   score: number;
-  /** Canvis de «senyors» fets just després de robar, dins la mateixa jugada (punt 32). */
+  /** Canvis de «senyors» fets just després de robar, dins la mateixa publicació (punt 32). */
   senyorsSwaps: number;
 }
+
+/** active: juga · retired: ha abandonat (fora de classificació) · removed: tret per consens (conserva punts i classificació). */
+export type PlayerStatus = "active" | "retired" | "removed";
 
 export interface Player {
   name: string;
@@ -32,28 +50,39 @@ export interface Player {
   rack: number[];
   /** Canvis de senyors consecutius en la seqüència actual (per a la tercera vegada, punt 32). */
   senyors: number;
+  status: PlayerStatus;
+  /** Encara no ha actuat amb l'atril rebut en començar o en entrar (per oferir-li els senyors). */
+  fresh: boolean;
 }
 
-export type EndReason = "closed" | "blocked";
+export type EndReason = "closed" | "blocked" | "abandoned";
 
 export interface GameState {
   /** Identificador de partida: 32 caràcters hexadecimals (128 bits). */
   gameId: string;
   rng: RngState;
-  /** Número de versió de l'estat: puja en cada canvi publicat, també en desfer. */
+  /** Versió de l'estat: puja en cada canvi publicat, també en desfer (D-01). */
   seq: number;
-  /** Nombre d'accions fetes (jugar, canviar, passar). Determina a qui toca. */
+  /** Nombre d'accions fetes. */
   turn: number;
-  /** Jugador que ha començat (guanyador del sorteig). */
+  /** Jugador que va guanyar el sorteig d'inici. */
   first: number;
+  /** Jugadors que van començar la partida (per al sorteig). */
+  initialCount: number;
   players: Player[];
+  /** Ordre de joc dels jugadors actius; el primer és qui obre cada ronda. */
+  order: number[];
+  /** Jugador a qui toca. */
+  current: number;
   board: (Cell | null)[];
   /** Bossa: es roba de la cua de l'array. */
   bag: number[];
-  /** Torns consecutius amb 0 punts (punt 22). */
+  /** Torns consecutius passant o canviant (punt 22, D-05). */
   scoreless: number;
+  /** Votació en curs per treure un jugador absent. */
+  removal: { target: number; votes: number[] } | null;
   last: LastAction | null;
-  /** Sorteig d'inici: una fila per ronda; fitxa treta per cada jugador, o -1 si no hi participava. */
+  /** Sorteig d'inici: una fila per ronda; fitxa treta per cada jugador inicial, o -1 si no hi participava. */
   startDraw: number[][];
   ended: EndReason | null;
   /** Empremta de l'estat anterior (16 caràcters hexadecimals); "" a l'estat inicial. */

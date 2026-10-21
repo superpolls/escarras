@@ -3,7 +3,7 @@ import { cellIndex } from "../src/core/board";
 import { stateHash } from "../src/core/codec";
 import {
   applyAction, checkPlay, createGame, currentPlayer, EngineError, isSenyorsRack, rackValue,
-  runStartDraw, senyorsAvailable, swapSenyors, tileInventoryOk,
+  runStartDraw, senyorsAtTurnStart, senyorsAvailable, standings, swapSenyors, tileInventoryOk,
 } from "../src/core/game";
 import { VOWELS } from "../src/core/tiles";
 import { dict, gameIdOf, put, seedOf, setup, T, word } from "./helpers";
@@ -31,11 +31,11 @@ describe("creació de la partida", () => {
     }
   });
 
-  it("cap atril inicial no queda amb senyors (500 partides)", () => {
-    for (let k = 0; k < 500; k++) {
-      const g = createGame({ gameId: gameIdOf(k), seed: seedOf(k), names: ["A", "B", "C", "D"] });
-      for (const p of g.players) expect(isSenyorsRack(p.rack)).toBe(false);
-    }
+  it("l'ordre de joc comença pel guanyador del sorteig i segueix l'ordre dels noms", () => {
+    const g = createGame({ gameId: gameIdOf(4), seed: seedOf(4), names: ["A", "B", "C", "D"] });
+    expect(g.order[0]).toBe(g.first);
+    expect(g.current).toBe(g.first);
+    expect(g.order).toEqual([0, 1, 2, 3].map(k => (g.first + k) % 4));
   });
 });
 
@@ -173,6 +173,13 @@ describe("canviar i passar (33-35)", () => {
     expect(currentPlayer(n)).not.toBe(p);
     expect(n.scoreless).toBe(1);
   });
+  it("el resultat no depèn de l'ordre en què es trien les fitxes", () => {
+    const g = createGame({ gameId: gameIdOf(2), seed: seedOf(2), names: ["A", "B"] });
+    const r = g.players[g.current]!.rack;
+    const a = applyAction(g, { type: "exchange", tiles: [r[0]!, r[1]!, r[2]!] }, dict());
+    const b = applyAction(g, { type: "exchange", tiles: [r[2]!, r[0]!, r[1]!] }, dict());
+    expect(stateHash(a)).toBe(stateHash(b));
+  });
   it("no es poden canviar fitxes que no són a l'atril", () => {
     const g = setup("C A S A E I O");
     expect(errorOf(() => applyAction(g, { type: "exchange", tiles: T("XX") }, dict()))).toEqual({ code: "not-in-rack" });
@@ -255,5 +262,137 @@ describe("regla dels senyors (32)", () => {
     n.bag = [...T("AEIOUAEIOUAEIOUAEIOU"), ...T("BC")];
     const r = swapSenyors(n, 0);
     expect(allVowels(r.players[0]!.rack)).toBe(false);
+  });
+});
+
+describe("senyors a l'atril inicial: s'ofereixen a l'inici del primer torn (D-03)", () => {
+  it("s'ofereix al jugador a qui toca, no es fa sol, i no passa el torn", () => {
+    const g = setup("A E I O U A E");
+    expect(g.players[0]!.rack).toEqual(T("AEIOUAE")); // no s'ha canviat automàticament
+    expect(senyorsAtTurnStart(g, 0)).toBe(true);
+    expect(senyorsAtTurnStart(g, 1)).toBe(false);
+    const n = applyAction(g, { type: "senyors" }, dict());
+    expect(n.current).toBe(0);
+    expect(n.seq).toBe(g.seq + 1);
+    expect(tileInventoryOk(n)).toBe(true);
+  });
+  it("després d'actuar ja no s'ofereix a l'inici del torn", () => {
+    const g = setup("A E I O U A E");
+    let n = applyAction(g, { type: "pass" }, dict());
+    n = applyAction(n, { type: "pass" }, dict());
+    n.players[0]!.rack = T("AEIOUAE");
+    expect(n.current).toBe(0);
+    expect(senyorsAtTurnStart(n, 0)).toBe(false);
+  });
+});
+
+describe("bloqueig: només compten passar i canviar (D-05)", () => {
+  it("una jugada vàlida de 0 punts (escarrassos) reinicia el comptador", () => {
+    let g = setup("? ? E I O U A");
+    for (let i = 0; i < 3; i++) g = applyAction(g, { type: "pass" }, dict());
+    g = applyAction(g, { type: "pass" }, dict()); // torna a tocar al jugador 0? (2 jugadors: 0,1,0,1)
+    expect(g.scoreless).toBe(4);
+    expect(g.current).toBe(0);
+    const n = applyAction(g, { type: "play", placements: word("H8", "as", "H") }, dict("AS"));
+    expect(n.last!.score).toBe(0);
+    expect(n.scoreless).toBe(0);
+    expect(n.ended).toBeNull();
+  });
+});
+
+describe("abandonar (D-13)", () => {
+  it("les fitxes tornen a la bossa, se'l salta i queda fora de la classificació", () => {
+    const g = setup("C A S A E I O", ["A", "B", "C"]);
+    const bag = g.bag.length;
+    const n = applyAction(g, { type: "leave" }, dict(), 1); // B abandona fora del seu torn
+    expect(n.players[1]!.status).toBe("retired");
+    expect(n.players[1]!.rack).toEqual([]);
+    expect(n.bag).toHaveLength(bag + 7);
+    expect(n.order).toEqual([0, 2]);
+    expect(standings(n)).not.toContain(1);
+    expect(tileInventoryOk(n)).toBe(true);
+    const m = applyAction(n, { type: "pass" }, dict());
+    expect(m.current).toBe(2);
+  });
+  it("si abandona qui té el torn, toca al següent", () => {
+    const g = setup("C A S A E I O", ["A", "B", "C"]);
+    expect(applyAction(g, { type: "leave" }, dict(), 0).current).toBe(1);
+  });
+  it("si només queda un jugador, la partida acaba", () => {
+    const g = setup("C A S A E I O");
+    expect(applyAction(g, { type: "leave" }, dict(), 1).ended).toBe("abandoned");
+  });
+});
+
+describe("treure un absent per consens (D-14)", () => {
+  const three = () => setup("C A S A E I O", ["A", "B", "C"]);
+
+  it("cal el vot de tots els altres actius; qui és tret conserva els punts i la classificació", () => {
+    const g = three();
+    g.players[0]!.score = 120;
+    g.current = 0; // l'absent (A) té el torn i la partida està encallada
+    let n = applyAction(g, { type: "vote-remove", target: 0 }, dict(), 1);
+    expect(n.players[0]!.status).toBe("active");
+    expect(n.removal).toEqual({ target: 0, votes: [1] });
+    n = applyAction(n, { type: "vote-remove", target: 0 }, dict(), 2);
+    expect(n.players[0]!.status).toBe("removed");
+    expect(n.players[0]!.score).toBe(120);
+    expect(standings(n)[0]).toBe(0);
+    expect(n.current).toBe(1);
+    expect(n.removal).toBeNull();
+    expect(tileInventoryOk(n)).toBe(true);
+  });
+  it("si l'absent torna i actua, la votació s'anul·la", () => {
+    let n = applyAction(three(), { type: "vote-remove", target: 0 }, dict(), 1);
+    n = applyAction(n, { type: "pass" }, dict()); // A (jugador 0) passa
+    expect(n.removal).toBeNull();
+  });
+  it("ningú no es pot votar a si mateix ni obrir dues votacions alhora", () => {
+    const g = three();
+    expect(errorOf(() => applyAction(g, { type: "vote-remove", target: 1 }, dict(), 1))).toEqual({ code: "not-allowed" });
+    const n = applyAction(g, { type: "vote-remove", target: 0 }, dict(), 1);
+    expect(errorOf(() => applyAction(n, { type: "vote-remove", target: 2 }, dict(), 1))).toEqual({ code: "vote-in-progress" });
+  });
+  it("un jugador retirat o tret no pot votar ni jugar", () => {
+    const n = applyAction(three(), { type: "leave" }, dict(), 2);
+    expect(errorOf(() => applyAction(n, { type: "vote-remove", target: 0 }, dict(), 2))).toEqual({ code: "not-active" });
+  });
+});
+
+describe("entrar a mitja partida (D-15)", () => {
+  it("un jugador nou entra al final de la ronda amb la puntuació més baixa dels actius", () => {
+    const g = setup("C A S A E I O", ["A", "B"]);
+    g.players[0]!.score = 80;
+    g.players[1]!.score = 35;
+    const n = applyAction(g, { type: "join", name: "Laia" }, dict());
+    expect(n.players[2]).toMatchObject({ name: "Laia", score: 35, status: "active" });
+    expect(n.players[2]!.rack).toHaveLength(7);
+    expect(n.order).toEqual([0, 1, 2]);
+    expect(n.current).toBe(0); // acceptar no gasta el torn
+    expect(tileInventoryOk(n)).toBe(true);
+  });
+  it("només ho accepta el mòbil de qui té el torn", () => {
+    expect(errorOf(() => applyAction(setup("C A S A E I O"), { type: "join", name: "Laia" }, dict(), 1))).toEqual({ code: "not-your-turn" });
+  });
+  it("cal que hi hagi 7 fitxes a la bossa i com a molt 4 jugadors actius", () => {
+    const g = setup("C A S A E I O");
+    g.bag = g.bag.slice(0, 6);
+    expect(errorOf(() => applyAction(g, { type: "join", name: "Laia" }, dict()))).toEqual({ code: "bag-too-small" });
+    const full = setup("C A S A E I O", ["A", "B", "C", "D"]);
+    expect(errorOf(() => applyAction(full, { type: "join", name: "Laia" }, dict()))).toEqual({ code: "table-full" });
+  });
+  it("qui torna entra amb el més alt entre els seus punts i la puntuació més baixa dels actius", () => {
+    const g = setup("C A S A E I O", ["A", "B", "C"]);
+    g.players[0]!.score = 30;
+    g.players[1]!.score = 50;
+    g.players[2]!.score = 10;
+    let m = applyAction(g, { type: "leave" }, dict(), 1); // B (50) abandona; actius A (30) i C (10)
+    m = applyAction(m, { type: "rejoin", player: 1 }, dict());
+    expect(m.players[1]).toMatchObject({ status: "active", score: 50 });
+    expect(m.order).toEqual([0, 2, 1]);
+
+    let k = applyAction(g, { type: "leave" }, dict(), 2); // C (10) abandona; actius A (30) i B (50)
+    k = applyAction(k, { type: "rejoin", player: 2 }, dict());
+    expect(k.players[2]!.score).toBe(30);
   });
 });

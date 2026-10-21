@@ -1,17 +1,20 @@
 /**
  * Motor del joc: funcions pures (estat + acció → estat nou). Sense pantalla, xarxa ni rellotge.
  * Referència: Reglament de Scrabble clàssic de l'AJUSC v1.1 (els números entre parèntesis són els punts).
+ * Les decisions D-xx són a DECISIONS.md.
  */
 import { CELLS, CENTER, colOf, letterMultiplier, rowOf, SIZE, wordMultiplier } from "./board";
 import { stateHash } from "./codec";
 import { rngFromSeed, shuffle, type RngState } from "./rng";
 import { BLANK, TILE_DISTRIBUTION, TILE_LABELS, TILE_VALUES, tilesToWord, VOWELS } from "./tiles";
-import type { Action, Cell, GameState, Placement } from "./types";
+import type { Action, Cell, GameState, Placement, Player } from "./types";
 
 export type IsWord = (tiles: readonly number[]) => boolean;
 
 export type MoveError =
   | { code: "game-over" }
+  | { code: "not-your-turn" }
+  | { code: "not-active" }
   | { code: "no-tiles" }
   | { code: "off-board" }
   | { code: "duplicate" }
@@ -26,6 +29,8 @@ export type MoveError =
   | { code: "invalid-words"; words: string[] }
   | { code: "bag-too-small" }
   | { code: "bad-exchange" }
+  | { code: "table-full" }
+  | { code: "vote-in-progress" }
   | { code: "not-allowed" };
 
 export class EngineError extends Error {
@@ -47,18 +52,26 @@ export interface PlayCheck {
 }
 
 export const MAX_NAME_CHARS = 12;
+export const MAX_ACTIVE = 4;
+export const MAX_PLAYERS = 8;
 const RACK_SIZE = 7;
 const MAX_DRAW_ROUNDS = 15;
 
 const clone = (s: GameState): GameState => JSON.parse(JSON.stringify(s)) as GameState;
+const fail = (error: MoveError): never => { throw new EngineError(error); };
 
-export const currentPlayer = (s: GameState) => (s.first + s.turn) % s.players.length;
-
+export const currentPlayer = (s: GameState) => s.current;
+export const activePlayers = (s: GameState) => s.players.flatMap((p, i) => (p.status === "active" ? [i] : []));
 export const rackValue = (rack: readonly number[]) => rack.reduce((a, t) => a + TILE_VALUES[t]!, 0);
 
 const draw = (s: GameState, rack: number[], n: number) => {
   for (let i = 0; i < n && s.bag.length > 0; i++) rack.push(s.bag.pop()!);
 };
+
+/** Classificació: actius i trets per consens, de més a menys punts. Els retirats en queden fora (D-13, D-14). */
+export function standings(s: GameState): number[] {
+  return s.players.flatMap((p, i) => (p.status === "retired" ? [] : [i])).sort((a, b) => s.players[b]!.score - s.players[a]!.score);
+}
 
 // ---------------------------------------------------------------- creació i sorteig (3, 5)
 
@@ -80,8 +93,7 @@ export function runStartDraw(n: number, drawTile: () => number): { first: number
     rounds.push(row);
     const best = Math.min(...contenders.map(c => row[c]!));
     contenders = contenders.filter(c => row[c] === best);
-    if (contenders.length === 1) return { first: contenders[0]!, rounds, drawn };
-    if (rounds.length >= MAX_DRAW_ROUNDS) return { first: contenders[0]!, rounds, drawn }; // pràcticament impossible
+    if (contenders.length === 1 || rounds.length >= MAX_DRAW_ROUNDS) return { first: contenders[0]!, rounds, drawn };
   }
 }
 
@@ -91,9 +103,11 @@ export interface NewGame {
   names: string[]; // 2 a 4 noms
 }
 
+const newPlayer = (name: string, score = 0): Player => ({ name: cleanName(name), score, rack: [], senyors: 0, status: "active", fresh: true });
+
 export function createGame({ gameId, seed, names }: NewGame): GameState {
   if (!/^[0-9a-f]{32}$/.test(gameId)) throw new Error("Identificador de partida no vàlid");
-  if (names.length < 2 || names.length > 4) throw new Error("Calen de 2 a 4 jugadors");
+  if (names.length < 2 || names.length > MAX_ACTIVE) throw new Error("Calen de 2 a 4 jugadors");
   const rng: RngState = rngFromSeed(seed);
   const bag: number[] = [];
   TILE_DISTRIBUTION.forEach((count, tile) => {
@@ -105,33 +119,17 @@ export function createGame({ gameId, seed, names }: NewGame): GameState {
   bag.push(...draw0.drawn); // les fitxes del sorteig tornen a la bossa
   shuffle(rng, bag);
 
+  const n = names.length;
+  const order = Array.from({ length: n }, (_, k) => (draw0.first + k) % n);
   const s: GameState = {
-    gameId,
-    rng,
-    seq: 0,
-    turn: 0,
-    first: draw0.first,
-    players: names.map(name => ({ name: cleanName(name), score: 0, rack: [], senyors: 0 })),
+    gameId, rng, seq: 0, turn: 0, first: draw0.first, initialCount: n,
+    players: names.map(name => newPlayer(name)),
+    order, current: draw0.first,
     board: new Array<Cell | null>(CELLS).fill(null),
-    bag,
-    scoreless: 0,
-    last: null,
-    startDraw: draw0.rounds,
-    ended: null,
-    prevHash: "",
+    bag, scoreless: 0, removal: null, last: null,
+    startDraw: draw0.rounds, ended: null, prevHash: "",
   };
-  // Cada jugador roba 7 fitxes, en ordre de joc (5)
-  for (let k = 0; k < names.length; k++) draw(s, s.players[(s.first + k) % names.length]!.rack, RACK_SIZE);
-  // Senyors a l'atril inicial: es canvien automàticament (decisió D-03)
-  for (let k = 0; k < names.length; k++) {
-    const p = (s.first + k) % names.length;
-    while (isSenyorsRack(s.players[p]!.rack) && s.bag.length > 0) {
-      const third = s.players[p]!.senyors >= 2;
-      doSenyorsSwap(s, p);
-      if (third) break;
-    }
-    s.players[p]!.senyors = 0;
-  }
+  for (const p of order) draw(s, s.players[p]!.rack, RACK_SIZE); // (5) en ordre de joc
   return s;
 }
 
@@ -141,7 +139,7 @@ export function cleanName(name: string): string {
   return n;
 }
 
-/** Canvia el nom d'un jugador. Només el mòbil d'aquest jugador ho fa, abans de publicar. */
+/** Canvia el nom d'un jugador. Només el mòbil d'aquest jugador ho fa, amb la seva propera publicació. */
 export function renamePlayer(state: GameState, player: number, name: string): GameState {
   const s = clone(state);
   const p = s.players[player];
@@ -171,29 +169,29 @@ function neighbours(i: number): number[] {
   return out;
 }
 
-/** Valida una jugada i calcula paraules i punts, sense modificar l'estat. */
+/** Valida una jugada del jugador a qui toca i calcula paraules i punts, sense modificar l'estat. */
 export function checkPlay(state: GameState, placements: readonly Placement[], isWord: IsWord):
   { ok: true; result: PlayCheck } | { ok: false; error: MoveError } {
-  const fail = (error: MoveError) => ({ ok: false as const, error });
-  if (state.ended) return fail({ code: "game-over" });
-  if (placements.length === 0) return fail({ code: "no-tiles" });
-  if (placements.length > RACK_SIZE) return fail({ code: "not-in-rack" });
+  const no = (error: MoveError) => ({ ok: false as const, error });
+  if (state.ended) return no({ code: "game-over" });
+  if (placements.length === 0) return no({ code: "no-tiles" });
+  if (placements.length > RACK_SIZE) return no({ code: "not-in-rack" });
 
   const seen = new Set<number>();
   for (const p of placements) {
-    if (!Number.isInteger(p.index) || p.index < 0 || p.index >= CELLS) return fail({ code: "off-board" });
-    if (seen.has(p.index)) return fail({ code: "duplicate" });
+    if (!Number.isInteger(p.index) || p.index < 0 || p.index >= CELLS) return no({ code: "off-board" });
+    if (seen.has(p.index)) return no({ code: "duplicate" });
     seen.add(p.index);
-    if (state.board[p.index]) return fail({ code: "occupied", index: p.index });
+    if (state.board[p.index]) return no({ code: "occupied", index: p.index });
     const isBlank = p.tile === BLANK;
     if (isBlank ? !(p.letter >= 1 && p.letter < TILE_LABELS.length) : p.letter !== p.tile || !(p.tile >= 1 && p.tile < TILE_LABELS.length))
-      return fail({ code: "bad-blank" });
+      return no({ code: "bad-blank" });
   }
   // Les fitxes han de ser a l'atril del jugador
-  const rack = [...state.players[currentPlayer(state)]!.rack];
+  const rack = [...state.players[state.current]!.rack];
   for (const p of placements) {
     const k = rack.indexOf(p.tile);
-    if (k < 0) return fail({ code: "not-in-rack" });
+    if (k < 0) return no({ code: "not-in-rack" });
     rack.splice(k, 1);
   }
 
@@ -201,21 +199,21 @@ export function checkPlay(state: GameState, placements: readonly Placement[], is
   const idx = placements.map(p => p.index).sort((a, b) => a - b);
   const sameRow = idx.every(i => rowOf(i) === rowOf(idx[0]!));
   const sameCol = idx.every(i => colOf(i) === colOf(idx[0]!));
-  if (!sameRow && !sameCol) return fail({ code: "not-aligned" });
+  if (!sameRow && !sameCol) return no({ code: "not-aligned" });
 
   const board = state.board.slice();
   for (const p of placements) board[p.index] = { tile: p.tile, letter: p.letter };
 
   // Sense forats entre la primera i l'última fitxa (11)
   const step: 1 | 15 = idx.length > 1 ? (sameRow ? 1 : 15) : 1;
-  for (let i = idx[0]!; i <= idx[idx.length - 1]!; i += step) if (!board[i]) return fail({ code: "gap" });
+  for (let i = idx[0]!; i <= idx[idx.length - 1]!; i += step) if (!board[i]) return no({ code: "gap" });
 
   const boardEmpty = state.board.every(c => c === null);
   if (boardEmpty) {
-    if (!seen.has(CENTER)) return fail({ code: "first-center" }); // (9)
-    if (placements.length < 2) return fail({ code: "first-two" }); // (9)
+    if (!seen.has(CENTER)) return no({ code: "first-center" }); // (9)
+    if (placements.length < 2) return no({ code: "first-two" }); // (9)
   } else if (!placements.some(p => neighbours(p.index).some(n => state.board[n]))) {
-    return fail({ code: "not-connected" }); // (11)
+    return no({ code: "not-connected" }); // (11)
   }
 
   // Paraules formades: la principal i les creuades (11-12)
@@ -232,7 +230,7 @@ export function checkPlay(state: GameState, placements: readonly Placement[], is
       if (w.length >= 2) wordCells.push(w);
     }
   }
-  if (wordCells.length === 0) return fail({ code: "not-connected" });
+  if (wordCells.length === 0) return no({ code: "not-connected" });
 
   const words: Word[] = wordCells.map(cells => {
     let sum = 0;
@@ -246,74 +244,191 @@ export function checkPlay(state: GameState, placements: readonly Placement[], is
     return { cells, letters: cells.map(c => board[c]!.letter), score: sum * mult };
   });
   const invalid = words.filter(w => !isWord(w.letters)).map(w => tilesToWord(w.letters));
-  if (invalid.length) return fail({ code: "invalid-words", words: invalid });
+  if (invalid.length) return no({ code: "invalid-words", words: invalid });
 
   const bingo = placements.length === RACK_SIZE;
   const score = words.reduce((a, w) => a + w.score, 0) + (bingo ? 50 : 0); // (49)
   return { ok: true, result: { words, score, bingo } };
 }
 
-/** Aplica una acció del jugador a qui toca. Retorna un estat nou; llança EngineError si no és vàlida. */
-export function applyAction(state: GameState, action: Action, isWord: IsWord): GameState {
-  if (state.ended) throw new EngineError({ code: "game-over" });
-  const s = clone(state);
-  const p = currentPlayer(s);
+// ---------------------------------------------------------------- ordre de joc i membres
+
+/** Jugador actiu següent en l'ordre de joc. */
+const nextInOrder = (s: GameState, p: number) => s.order[(s.order.indexOf(p) + 1) % s.order.length]!;
+
+/** Treu un jugador del joc: les seves fitxes tornen a la bossa, que es remena (D-13, D-14). */
+function dropPlayer(s: GameState, p: number, status: "retired" | "removed"): void {
   const pl = s.players[p]!;
+  if (s.current === p && s.order.length > 1) s.current = nextInOrder(s, p);
+  s.order = s.order.filter(x => x !== p);
+  s.bag.push(...pl.rack);
+  shuffle(s.rng, s.bag);
+  pl.rack = [];
+  pl.status = status;
+  pl.senyors = 0;
+  pl.fresh = false;
+  if (s.removal) {
+    if (s.removal.target === p) s.removal = null;
+    else s.removal.votes = s.removal.votes.filter(v => v !== p);
+  }
+  s.scoreless = 0;
+}
+
+/** Si tots els altres actius han votat, el jugador queda tret (D-14). */
+function settleRemoval(s: GameState): void {
+  if (!s.removal) return;
+  const { target, votes } = s.removal;
+  const needed = activePlayers(s).filter(p => p !== target);
+  if (needed.length > 0 && needed.every(p => votes.includes(p))) dropPlayer(s, target, "removed");
+}
+
+const minActiveScore = (s: GameState) => Math.min(...activePlayers(s).map(p => s.players[p]!.score));
+
+/** Afegeix un jugador al final de la ronda amb 7 fitxes noves (D-15). */
+function seat(s: GameState, p: number): void {
+  s.order.push(p);
+  draw(s, s.players[p]!.rack, RACK_SIZE);
+  s.scoreless = 0;
+}
+
+// ---------------------------------------------------------------- aplicar accions
+
+/**
+ * Aplica una acció. `actor` és el jugador que la fa (per defecte, a qui toca).
+ * Retorna un estat nou; llança EngineError si l'acció no és vàlida.
+ */
+export function applyAction(state: GameState, action: Action, isWord: IsWord, actor: number = state.current): GameState {
+  if (state.ended) fail({ code: "game-over" });
+  const s = clone(state);
+  const pl = s.players[actor];
+  if (!pl || pl.status !== "active") return fail({ code: "not-active" });
+  const onTurn = () => { if (actor !== s.current) fail({ code: "not-your-turn" }); };
   let score = 0;
   let canonical: Action;
 
-  if (action.type === "play") {
-    const check = checkPlay(state, action.placements, isWord);
-    if (!check.ok) throw new EngineError(check.error);
-    const placements = [...action.placements].sort((a, b) => a.index - b.index).map(x => ({ index: x.index, tile: x.tile, letter: x.letter }));
-    for (const x of placements) {
-      pl.rack.splice(pl.rack.indexOf(x.tile), 1);
-      s.board[x.index] = { tile: x.tile, letter: x.letter };
+  switch (action.type) {
+    case "play": {
+      onTurn();
+      const check = checkPlay(state, action.placements, isWord);
+      if (!check.ok) return fail(check.error);
+      const placements = [...action.placements].sort((a, b) => a.index - b.index).map(x => ({ index: x.index, tile: x.tile, letter: x.letter }));
+      for (const x of placements) {
+        pl.rack.splice(pl.rack.indexOf(x.tile), 1);
+        s.board[x.index] = { tile: x.tile, letter: x.letter };
+      }
+      score = check.result.score;
+      pl.score += score;
+      draw(s, pl.rack, RACK_SIZE - pl.rack.length); // (19)
+      s.scoreless = 0; // una jugada vàlida fa avançar la partida, encara que valgui 0 punts (D-05)
+      canonical = { type: "play", placements };
+      break;
     }
-    score = check.result.score;
-    pl.score += score;
-    draw(s, pl.rack, RACK_SIZE - pl.rack.length); // (19)
-    canonical = { type: "play", placements };
-  } else if (action.type === "exchange") {
-    if (s.bag.length < RACK_SIZE) throw new EngineError({ code: "bag-too-small" }); // (34)
-    if (action.tiles.length < 1 || action.tiles.length > RACK_SIZE) throw new EngineError({ code: "bad-exchange" });
-    const rack = [...pl.rack];
-    for (const t of action.tiles) {
-      const k = rack.indexOf(t);
-      if (k < 0) throw new EngineError({ code: "not-in-rack" });
-      rack.splice(k, 1);
+    case "exchange": {
+      onTurn();
+      if (s.bag.length < RACK_SIZE) fail({ code: "bag-too-small" }); // (34)
+      if (action.tiles.length < 1 || action.tiles.length > RACK_SIZE) fail({ code: "bad-exchange" });
+      // Ordre canònic: el resultat no pot dependre de l'ordre en què es trien les fitxes
+      const tiles = [...action.tiles].sort((a, b) => a - b);
+      const rack = [...pl.rack];
+      for (const t of tiles) {
+        const k = rack.indexOf(t);
+        if (k < 0) fail({ code: "not-in-rack" });
+        rack.splice(k, 1);
+      }
+      // (34) Primer roba les noves; després les descartades tornen a la bossa, que es remena
+      draw(s, rack, tiles.length);
+      s.bag.push(...tiles);
+      shuffle(s.rng, s.bag);
+      pl.rack = rack;
+      s.scoreless += 1;
+      canonical = { type: "exchange", tiles };
+      break;
     }
-    // (34) Primer roba les noves; després les descartades tornen a la bossa, que es remena
-    draw(s, rack, action.tiles.length);
-    s.bag.push(...action.tiles);
-    shuffle(s.rng, s.bag);
-    pl.rack = rack;
-    canonical = { type: "exchange", tiles: [...action.tiles].sort((a, b) => a - b) };
-  } else if (action.type === "pass") {
-    canonical = { type: "pass" }; // (33)
-  } else {
-    throw new EngineError({ code: "not-allowed" });
+    case "pass":
+      onTurn();
+      s.scoreless += 1; // (33)
+      canonical = { type: "pass" };
+      break;
+    case "senyors":
+      // Atril inicial o d'entrada: s'ofereix a l'inici del propi torn (D-03)
+      onTurn();
+      if (!senyorsAtTurnStart(state, actor)) fail({ code: "not-allowed" });
+      doSenyorsSwap(s, actor);
+      canonical = { type: "senyors" };
+      break;
+    case "leave":
+      dropPlayer(s, actor, "retired"); // (D-13)
+      canonical = { type: "leave" };
+      break;
+    case "vote-remove": {
+      const target = action.target;
+      if (target === actor || s.players[target]?.status !== "active") fail({ code: "not-allowed" });
+      if (s.removal && s.removal.target !== target) fail({ code: "vote-in-progress" });
+      s.removal ??= { target, votes: [] };
+      if (!s.removal.votes.includes(actor)) s.removal.votes.push(actor);
+      s.removal.votes.sort((a, b) => a - b);
+      canonical = { type: "vote-remove", target };
+      break;
+    }
+    case "join": {
+      onTurn();
+      if (activePlayers(s).length >= MAX_ACTIVE || s.players.length >= MAX_PLAYERS) fail({ code: "table-full" });
+      if (s.bag.length < RACK_SIZE) fail({ code: "bag-too-small" });
+      // Jugador nou: la puntuació més baixa dels actius (D-15)
+      s.players.push(newPlayer(action.name, minActiveScore(s)));
+      seat(s, s.players.length - 1);
+      canonical = { type: "join", name: cleanName(action.name) };
+      break;
+    }
+    case "rejoin": {
+      onTurn();
+      const back = s.players[action.player];
+      if (!back || back.status === "active") fail({ code: "not-allowed" });
+      if (activePlayers(s).length >= MAX_ACTIVE) fail({ code: "table-full" });
+      if (s.bag.length < RACK_SIZE) fail({ code: "bag-too-small" });
+      // Qui torna: el més alt entre els seus punts i la puntuació més baixa dels actius (D-15)
+      back!.score = Math.max(back!.score, minActiveScore(s));
+      back!.status = "active";
+      back!.fresh = true;
+      back!.senyors = 0;
+      seat(s, action.player);
+      canonical = { type: "rejoin", player: action.player };
+      break;
+    }
+    default:
+      return fail({ code: "not-allowed" });
   }
 
-  pl.senyors = 0;
-  s.scoreless = score > 0 ? 0 : s.scoreless + 1;
-  s.last = { player: p, action: canonical, score, senyorsSwaps: 0 };
+  // Si el jugador amenaçat de ser tret actua, la votació s'anul·la (D-14)
+  if (s.removal?.target === actor) s.removal = null;
+  settleRemoval(s);
+
+  const advances = action.type === "play" || action.type === "exchange" || action.type === "pass";
+  if (advances) {
+    pl.senyors = 0;
+    pl.fresh = false;
+    s.current = nextInOrder(s, actor);
+  }
+  s.last = { player: actor, action: canonical, score, senyorsSwaps: 0 };
   s.turn += 1;
   s.seq += 1;
   s.prevHash = stateHash(state);
 
   // Final de partida (22), adaptat a 2-4 jugadors
+  const active = activePlayers(s);
   if (action.type === "play" && pl.rack.length === 0 && s.bag.length === 0) {
     s.ended = "closed";
-    for (const [i, o] of s.players.entries()) {
-      if (i === p) continue;
-      const v = rackValue(o.rack);
-      o.score -= v;
+    for (const o of active) {
+      if (o === actor) continue;
+      const v = rackValue(s.players[o]!.rack);
+      s.players[o]!.score -= v;
       pl.score += v;
     }
-  } else if (s.scoreless >= 3 * s.players.length) {
+  } else if (active.length < 2) {
+    s.ended = "abandoned"; // sense ajustos d'atril: la partida no s'ha tancat (D-16)
+  } else if (s.scoreless >= 3 * active.length) {
     s.ended = "blocked";
-    for (const o of s.players) o.score -= rackValue(o.rack);
+    for (const o of active) s.players[o]!.score -= rackValue(s.players[o]!.rack);
   }
   return s;
 }
@@ -327,18 +442,27 @@ export function isSenyorsRack(rack: readonly number[]): boolean {
   return v === 0 || v === RACK_SIZE;
 }
 
-/** El jugador pot canviar per senyors: just després de robar (jugada o canvi) i si queda alguna fitxa a la bossa. */
-export function senyorsAvailable(state: GameState, player: number): boolean {
-  if (state.ended || !state.last || state.last.player !== player) return false;
-  const t = state.last.action.type;
-  if (t !== "play" && t !== "exchange") return false;
-  const pl = state.players[player]!;
+const canSwap = (s: GameState, p: number) => {
+  const pl = s.players[p]!;
   // Després del procediment de la tercera vegada ja no es pot tornar a canviar
-  return pl.senyors < 3 && state.bag.length > 0 && isSenyorsRack(pl.rack);
+  return !s.ended && pl.status === "active" && pl.senyors < 3 && s.bag.length > 0 && isSenyorsRack(pl.rack);
+};
+
+/** Oferta just després de robar, dins la mateixa publicació de la jugada o el canvi (32). */
+export function senyorsAvailable(state: GameState, player: number): boolean {
+  if (!state.last || state.last.player !== player) return false;
+  const t = state.last.action.type;
+  return (t === "play" || t === "exchange") && canSwap(state, player);
 }
 
+/** Oferta a l'inici del propi torn, amb l'atril inicial o d'entrada (D-03). */
+export function senyorsAtTurnStart(state: GameState, player: number): boolean {
+  return state.current === player && state.players[player]!.fresh && canSwap(state, player);
+}
+
+/** Canvi de senyors just després de robar; no canvia la versió perquè va dins la mateixa publicació. */
 export function swapSenyors(state: GameState, player: number): GameState {
-  if (!senyorsAvailable(state, player)) throw new EngineError({ code: "not-allowed" });
+  if (!senyorsAvailable(state, player)) fail({ code: "not-allowed" });
   const s = clone(state);
   doSenyorsSwap(s, player);
   s.last!.senyorsSwaps += 1;
@@ -353,16 +477,14 @@ function doSenyorsSwap(s: GameState, player: number): void {
   if (pl.senyors >= 2) {
     // Tercera vegada consecutiva: procediment especial (32)
     const different = s.bag.filter(t => !sameKind(t));
-    if (different.length === 0) {
-      // Tota la bossa és del mateix tipus: es queda les fitxes
-    } else if (different.length === 1) {
+    if (different.length === 1) {
       const keep = different[0]!;
       s.bag.splice(s.bag.indexOf(keep), 1);
       s.bag.push(...pl.rack);
       shuffle(s.rng, s.bag);
       pl.rack = [keep];
       draw(s, pl.rack, RACK_SIZE - 1);
-    } else {
+    } else if (different.length > 1) {
       for (let guard = 0; guard < 10000; guard++) {
         s.bag.push(...pl.rack);
         shuffle(s.rng, s.bag);
@@ -370,7 +492,7 @@ function doSenyorsSwap(s: GameState, player: number): void {
         draw(s, pl.rack, RACK_SIZE);
         if (pl.rack.some(t => !sameKind(t))) break;
       }
-    }
+    } // si tota la bossa és del mateix tipus, es queda les fitxes
   } else {
     s.bag.push(...pl.rack);
     shuffle(s.rng, s.bag);
@@ -382,19 +504,20 @@ function doSenyorsSwap(s: GameState, player: number): void {
 
 // ---------------------------------------------------------------- desfer i verificació
 
-/** Pot desfer qui ha fet l'última acció, si no és ja un desfer. */
+/** Pot desfer qui ha fet l'última jugada, canvi o passada. */
 export function canUndo(state: GameState, player: number): boolean {
-  return !!state.last && state.last.player === player && state.last.action.type !== "undo";
+  const t = state.last?.action.type;
+  return !!state.last && state.last.player === player && (t === "play" || t === "exchange" || t === "pass");
 }
 
-/** Torna a l'estat anterior com a versió nova (seq + 1), perquè els altres mòbils l'acceptin. */
+/** Torna a l'estat anterior com a versió nova (seq + 1), perquè els altres mòbils l'acceptin (D-01). */
 export function undoState(current: GameState, previous: GameState): GameState {
-  if (!current.last || current.last.action.type === "undo") throw new EngineError({ code: "not-allowed" });
+  if (!current.last || !canUndo(current, current.last.player)) fail({ code: "not-allowed" });
   if (current.prevHash !== stateHash(previous)) throw new Error("L'estat anterior no correspon");
   const s = clone(previous);
   s.seq = current.seq + 1;
   s.prevHash = stateHash(current);
-  s.last = { player: current.last.player, action: { type: "undo" }, score: 0, senyorsSwaps: 0 };
+  s.last = { player: current.last!.player, action: { type: "undo" }, score: 0, senyorsSwaps: 0 };
   return s;
 }
 
@@ -418,11 +541,10 @@ export function verifyTransition(prev: GameState, next: GameState, isWord: IsWor
       if (!before) return { ok: true, replayed: false };
       expected = undoState(prev, before);
     } else {
-      if (last.player !== currentPlayer(prev)) return { ok: false, reason: "no era el seu torn" };
-      expected = applyAction(prev, last.action, isWord);
+      expected = applyAction(prev, last.action, isWord, last.player);
       for (let k = 0; k < last.senyorsSwaps; k++) expected = swapSenyors(expected, last.player);
-      // El jugador que ha jugat pot haver canviat el seu nom
-      expected.players[last.player]!.name = next.players[last.player]!.name;
+      // Qui actua pot haver canviat el seu nom
+      expected.players[last.player]!.name = next.players[last.player]?.name ?? "";
     }
   } catch (e) {
     return { ok: false, reason: e instanceof EngineError ? `acció no vàlida (${e.error.code})` : String(e) };
@@ -438,4 +560,3 @@ export function tileInventoryOk(s: GameState): boolean {
   for (const t of s.bag) counts[t]! += 1;
   return counts.every((c, i) => c === TILE_DISTRIBUTION[i]);
 }
-

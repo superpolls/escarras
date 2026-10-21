@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { CELLS, CENTER, colOf, rowOf, SIZE } from "../src/core/board";
 import { decodeState, encodeState, stateHash } from "../src/core/codec";
 import {
-  applyAction, canUndo, checkPlay, createGame, currentPlayer, senyorsAvailable, swapSenyors,
-  tileInventoryOk, undoState, verifyTransition, type IsWord,
+  activePlayers, applyAction, canUndo, checkPlay, createGame, currentPlayer, rackValue, senyorsAtTurnStart,
+  senyorsAvailable, swapSenyors, tileInventoryOk, undoState, verifyTransition, type IsWord,
 } from "../src/core/game";
 import type { Action, GameState, Placement } from "../src/core/types";
 import { dict, gameIdOf, seedOf, setup, word } from "./helpers";
@@ -14,6 +14,7 @@ const anyWord: IsWord = () => true; // diccionari permissiu: prova la geometria 
 function randomAction(s: GameState, rnd: (n: number) => number): Action {
   const rack = s.players[currentPlayer(s)]!.rack;
   const empty = s.board.every(c => !c);
+  if (s.bag.length >= 7 && rack.length && rnd(40) === 0) return { type: "exchange", tiles: rack.slice(0, 1 + rnd(rack.length)) };
   for (let attempt = 0; attempt < 30 && rack.length; attempt++) {
     const dir = rnd(2) ? 1 : SIZE;
     const k = 1 + rnd(rack.length);
@@ -104,30 +105,61 @@ describe("desfer i verificació per repetició", () => {
 });
 
 describe("simulació: 1.000 partides amb jugades aleatòries", () => {
-  it("es compleixen sempre els invariants", () => {
+  it("es compleixen sempre els invariants, també amb abandonaments, votacions i entrades", () => {
     let seed = 2024;
     // Bits alts: els bits baixos d'un generador congruencial lineal tenen períodes molt curts
     const rnd = (n: number) => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return (seed >>> 8) % n; };
     let maxBytes = 0;
-    let closed = 0;
-    let blocked = 0;
+    const ends: Record<string, number> = {};
+    const meta: Record<string, number> = {};
     for (let game = 0; game < 1000; game++) {
       const n = 2 + (game % 3);
       let s = createGame({ gameId: gameIdOf(game), seed: seedOf(game), names: Array.from({ length: n }, (_, i) => `Jugador ${i + 1}`) });
       let earned = 0;
-      for (let step = 0; step < 400 && !s.ended; step++) {
+      for (let step = 0; step < 600 && !s.ended; step++) {
         const prev = s;
-        // Una de cada 10 partides passa molt sovint, per provocar també finals per bloqueig
-        const action: Action = game % 10 === 0 && rnd(4) ? { type: "pass" } : randomAction(prev, rnd);
-        s = applyAction(prev, action, anyWord);
+        const active = activePlayers(prev);
+        const pick = rnd(1000);
+        let action: Action;
+        let actor = prev.current;
+        if (pick < 5) {
+          actor = active[rnd(active.length)]!;
+          action = { type: "leave" };
+        } else if (pick < 15 && !prev.removal && active.length > 2) {
+          const target = active[rnd(active.length)]!;
+          actor = active.filter(p => p !== target)[0]!;
+          action = { type: "vote-remove", target };
+        } else if (prev.removal && pick < 800) {
+          const pending = active.filter(p => p !== prev.removal!.target && !prev.removal!.votes.includes(p));
+          actor = pending[0] ?? prev.current;
+          action = pending.length ? { type: "vote-remove", target: prev.removal.target } : randomAction(prev, rnd);
+        } else if (pick < 25 && active.length < 4 && prev.bag.length >= 7 && prev.players.length < 8) {
+          action = { type: "join", name: `Nou ${prev.players.length + 1}` };
+        } else if (pick < 35 && active.length < 4 && prev.bag.length >= 7 && prev.players.some(p => p.status !== "active")) {
+          action = { type: "rejoin", player: prev.players.findIndex(p => p.status !== "active") };
+        } else if (senyorsAtTurnStart(prev, prev.current) && rnd(2)) {
+          action = { type: "senyors" };
+        } else if (game % 10 === 0 && rnd(4)) {
+          action = { type: "pass" }; // una de cada 10 partides passa molt sovint, per provocar bloquejos
+        } else {
+          action = randomAction(prev, rnd);
+        }
+        meta[action.type] = (meta[action.type] ?? 0) + 1;
+        s = applyAction(prev, action, anyWord, actor);
         earned += s.last!.score;
+        if (action.type === "join") earned += s.players.at(-1)!.score;
+        if (action.type === "rejoin") earned += s.players[action.player]!.score - prev.players[action.player]!.score;
         const p = s.last!.player;
         while (senyorsAvailable(s, p) && rnd(2)) s = swapSenyors(s, p);
 
         expect(tileInventoryOk(s)).toBe(true);
         for (const pl of s.players) expect(pl.rack.length).toBeLessThanOrEqual(7);
+        const act = activePlayers(s);
+        expect(act.length).toBeLessThanOrEqual(4);
+        expect([...s.order].sort()).toEqual(act);
+        if (!s.ended) expect(s.order).toContain(s.current);
+        for (const i of s.players.keys()) if (s.players[i]!.status !== "active") expect(s.players[i]!.rack).toEqual([]);
         expect(s.seq).toBe(prev.seq + 1);
-        expect(s.turn).toBe(prev.turn + 1);
         const bytes = encodeState(s);
         maxBytes = Math.max(maxBytes, bytes.length);
         expect(stateHash(decodeState(bytes))).toBe(stateHash(s));
@@ -135,17 +167,15 @@ describe("simulació: 1.000 partides amb jugades aleatòries", () => {
         if (!v.ok) throw new Error(`Partida ${game}, pas ${step}: ${v.reason}`);
       }
       expect(s.ended).not.toBeNull();
-      if (s.ended === "closed") closed++; else blocked++;
-      // Sense els ajustos finals, la suma de punts és la suma de les jugades
-      const total = s.players.reduce((a, p) => a + p.score, 0);
-      if (s.ended === "blocked") {
-        const left = s.players.reduce((a, p) => a + p.rack.reduce((b, t) => b + [0, 1, 3, 2, 10, 2, 1, 4, 3, 8, 1, 8, 1, 10, 2, 1, 10, 1, 3, 8, 1, 1, 1, 1, 4, 10, 8][t]!, 0), 0);
-        expect(total).toBe(earned - left);
-      } else {
-        expect(total).toBe(earned);
-      }
+      ends[s.ended!] = (ends[s.ended!] ?? 0) + 1;
+      const total = s.players.reduce((a, pl) => a + pl.score, 0);
+      const leftActive = activePlayers(s).reduce((a, i) => a + rackValue(s.players[i]!.rack), 0);
+      expect(total).toBe(s.ended === "blocked" ? earned - leftActive : earned);
     }
-    console.log(`Partides tancades: ${closed}, bloquejades: ${blocked}; estat més gran: ${maxBytes} bytes`);
+    console.log("Finals:", ends, "· accions:", meta, `· estat més gran: ${maxBytes} bytes`);
+    expect(ends.closed).toBeGreaterThan(0);
+    expect(ends.blocked).toBeGreaterThan(0);
+    expect(ends.abandoned).toBeGreaterThan(0);
     expect(maxBytes).toBeLessThan(400);
-  }, 120000);
+  }, 300000);
 });

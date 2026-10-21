@@ -28,7 +28,16 @@ export const gameIdOf = (n: number) => n.toString(16).padStart(32, "0");
 export function setup(rack: string, names = ["Anna", "Biel"]): GameState {
   const g = createGame({ gameId: gameIdOf(1), seed: seedOf(1), names });
   g.first = 0;
-  g.players[0]!.rack = rack.split(" ").filter(Boolean).flatMap(x => (x === "?" ? [0] : T(x)));
+  g.current = 0;
+  g.order = names.map((_, i) => i);
+  // Canvia l'atril mantenint les 100 fitxes: les antigues tornen a la bossa i les noves en surten
+  g.bag.push(...g.players[0]!.rack);
+  const wanted = rack.split(" ").filter(Boolean).flatMap(x => (x === "?" ? [0] : T(x)));
+  for (const t of wanted) {
+    const k = g.bag.indexOf(t);
+    if (k >= 0) g.bag.splice(k, 1);
+  }
+  g.players[0]!.rack = wanted;
   return g;
 }
 

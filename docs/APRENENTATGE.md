@@ -97,3 +97,15 @@ Es construeix en mig segon amb `npm run lexicon`. El script comprova primer l'em
 **Lliçó 2 · un generador dolent amaga errors.** La primera simulació feia servir els bits baixos d'un generador congruencial lineal, que repeteixen un patró curt (0, 1, 2, 3, 0, 1…). Cap partida acabava per bloqueig i l'error anterior no apareixia. Amb els bits alts, va sortir de seguida. Els tests aleatoris també necessiten bon atzar.
 
 **Decisions:** totes les interpretacions del reglament són a `DECISIONS.md`.
+
+## 6. M2 bis · Jugadors que marxen i que entren
+
+**Qui pot escriure què.** Abans, només el mòbil de qui té el torn podia modificar la partida. Ara algunes accions les fa una altra persona: abandonar i votar, des del mòbil de qui actua; acceptar qui entra, des del de qui té el torn. Cada acció només es pot fer des del mòbil del jugador afectat. És el principi de **mínim privilegi** aplicat al joc.
+
+**Ordre de torns explícit.** Abans es calculava (qui va començar + nombre de torns). Ara és una llista que pot canviar: qui marxa en surt, qui entra s'afegeix al final de la ronda.
+
+**Votació per consens.** Treure un absent requereix el vot de tots els altres actius. Si l'absent torna i fa qualsevol cosa, la votació s'anul·la. Qui és tret conserva els punts i la classificació, així que treure'l no li pren res.
+
+**Concurrència optimista amb rebase** (per a la sincronització en línia, M4b). Si dues persones actuen alhora, el servidor accepta la primera. El mòbil de la segona rep la versió nova, hi torna a aplicar la seva acció i la publica. No es bloqueja mai res; el conflicte, poc freqüent, es resol quan passa.
+
+**Lliçó 3 · ordre canònic.** La simulació va trobar que canviar les fitxes A, B, C o C, A, B donava bosses diferents: el resultat de remenar depenia de l'ordre en què les fitxes tornaven a la bossa. Al mòbil de qui jugava sortia una cosa i, en verificar-ho, al mòbil de qui ho rebia una altra. Ara les fitxes s'ordenen sempre abans d'aplicar l'acció. **Regla general: si un resultat ha de ser idèntic a tot arreu, cap detall arbitrari (ordre, hora, idioma) no hi pot influir.**
