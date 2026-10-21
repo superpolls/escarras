@@ -1,0 +1,32 @@
+{
+  "rules": {
+    "r": {
+      "$room": {
+        ".read": "$room.length === 22 && $room.matches(/^[A-Za-z0-9_-]+$/)",
+        "h": {
+          ".write": "$room.length === 22 && $room.matches(/^[A-Za-z0-9_-]+$/) && newData.exists()",
+          ".validate": "newData.hasChildren(['s', 'p', 'd']) && newData.child('s').isNumber() && newData.child('p').isNumber() && newData.child('d').isString() && newData.child('d').val().length <= 8000 && newData.child('s').val() > newData.child('p').val() && ((data.exists() && newData.child('p').val() === data.child('s').val()) || (!data.exists() && newData.child('p').val() === -1))",
+          "s": { ".validate": true },
+          "p": { ".validate": true },
+          "d": { ".validate": true },
+          "$other": { ".validate": false }
+        },
+        "s": {
+          "$seat": {
+            ".write": "$room.length === 22 && $room.matches(/^[A-Za-z0-9_-]+$/) && newData.exists()",
+            ".validate": "$seat.matches(/^[0-7]$/) && newData.hasChildren(['d', 'p']) && newData.child('d').isString() && newData.child('d').val().length === 22 && newData.child('p').isString() && ((data.exists() && newData.child('p').val() === data.child('d').val()) || (!data.exists() && newData.child('p').val() === ''))",
+            "d": { ".validate": true },
+            "p": { ".validate": true },
+            "$other": { ".validate": false }
+          }
+        },
+        "c": {
+          "$dev": {
+            ".write": "$room.length === 22 && $room.matches(/^[A-Za-z0-9_-]+$/)",
+            ".validate": "$dev.length === 22 && $dev.matches(/^[A-Za-z0-9_-]+$/) && newData.isNumber() && newData.val() >= 0 && newData.val() <= 7"
+          }
+        }
+      }
+    }
+  }
+}
