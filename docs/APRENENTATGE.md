@@ -127,3 +127,7 @@ Es construeix en mig segon amb `npm run lexicon`. El script comprova primer l'em
 **Validació en directe.** Cada vegada que es mou una fitxa, el motor revalida la jugada (mil·lisegons). En vermell, les fitxes de les paraules no vàlides, o totes si el problema és de posició; en verd, quan la jugada és vàlida.
 
 **Lliçó 4 · un test mal plantejat sembla un error.** La prova de moure una fitxa dues files amunt no la movia: amb els 44 píxels d'elevació, el dit només es desplaçava 6 píxels, menys del llindar, i el programa ho interpretava (correctament) com un toc. Abans de corregir el codi, cal comprovar que la prova fa el que creus.
+
+**Reordenar l'atril.** Arrossegant una fitxa dins l'atril es canvia de posició, i mentre el dit es mou es veu com quedarà. L'ordre es desa per fitxes (no per posicions) i només en aquest mòbil: quan robes fitxes noves, les que ja tenies conserven l'ordre i les noves van al final.
+
+**Lliçó 5 · els límits de la pantalla.** La prova portava el dit 9 píxels fora de la pantalla, i allà el navegador no troba cap element. Un dit de veritat també pot arribar a la vora, així que ara les coordenades es retallen a la zona visible.

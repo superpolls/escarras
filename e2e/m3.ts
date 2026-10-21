@@ -67,7 +67,7 @@ if (!move) throw new Error("No he trobat cap primera jugada");
 
 /** Arrossega una fitxa de l'atril a una casella, com ho faria un dit (la fitxa es veu 44 px per sobre del dit). */
 async function dragTo(slot: number, cell: number, shot?: string) {
-  const from = (await page.locator(".rack button").nth(slot).boundingBox())!;
+  const from = (await page.locator(`.rack button[data-slot="${slot}"]`).boundingBox())!;
   const to = (await page.locator(`[data-i="${cell}"]`).boundingBox())!;
   await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
   await page.mouse.down();
@@ -76,6 +76,24 @@ async function dragTo(slot: number, cell: number, shot?: string) {
   if (shot) await page.screenshot({ path: shot });
   await page.mouse.up();
 }
+
+// Reordenar l'atril: la primera fitxa, arrossegada fins al final de l'atril
+const slotsShown = () => page.locator(".rack button").evaluateAll(bs => bs.map(b => b.getAttribute("data-slot")));
+const rackBefore = await slotsShown();
+const a = (await page.locator(".rack button").first().boundingBox())!;
+const z = (await page.locator(".rack button").last().boundingBox())!;
+await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+await page.mouse.down();
+const endX = z.x + z.width - 4; // a la dreta de l'última fitxa
+for (let k = 1; k <= 8; k++) await page.mouse.move(a.x + a.width / 2 + (endX - a.x - a.width / 2) * k / 8, a.y + a.height / 2);
+await page.mouse.up();
+const rackAfter = await slotsShown();
+console.log("Atril abans:", rackBefore.join(","), "· després de reordenar:", rackAfter.join(","));
+if (rackAfter.at(-1) !== rackBefore[0]) throw new Error("No s'ha reordenat l'atril");
+await page.reload();
+await page.getByRole("button", { name: "Continua la partida" }).click();
+await page.getByRole("button", { name: /^Sóc / }).click();
+console.log("Ordre conservat després de recarregar:", (await slotsShown()).join(",") === rackAfter.join(","));
 
 // Primera fitxa arrossegada: sola no és vàlida (cal un mínim de 2) → vermella
 await dragTo(move.slots[0]!, move.cells[0]!, `${OUT}/4a-arrossegant.png`);
@@ -109,7 +127,7 @@ await page.getByRole("button", { name: /desfés la jugada/ }).click();
 s = await state(page);
 console.log("Després de desfer: punts", s.players.map(p => p.score).join(","), "· tauler buit:", s.board.every(c => !c));
 for (let k = 0; k < move.slots.length; k++) {
-  await page.locator(".rack button").nth(move.slots[k]!).click();
+  await page.locator(`.rack button[data-slot="${move.slots[k]}"]`).click();
   await page.locator(`[data-i="${move.cells[k]}"]`).click();
 }
 await page.getByRole("button", { name: "Juga" }).click();
@@ -142,7 +160,7 @@ await page.getByRole("button", { name: /^Sóc / }).click();
 s = await state(page);
 const blankSlot = s.players[s.current]!.rack.indexOf(0);
 if (blankSlot >= 0) {
-  await page.locator(".rack button").nth(blankSlot).click();
+  await page.locator(`.rack button[data-slot="${blankSlot}"]`).click();
   await page.locator(`[data-i="${s.board.findIndex(c => c) - 15}"]`).click();
   await page.screenshot({ path: `${OUT}/9-escarras.png` });
   await page.getByRole("button", { name: "Cancel·la" }).click();

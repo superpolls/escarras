@@ -10,6 +10,7 @@ import {
 import { BLANK, TILE_LABELS, TILE_VALUES, VOWELS } from "../core/tiles";
 import type { Action, GameState, Placement } from "../core/types";
 import { Scorebar } from "./scorebar";
+import { loadArrangement, saveArrangement } from "./storage";
 import { controlCode, vibrate } from "./support";
 import { errorText, points } from "./text";
 
@@ -21,7 +22,27 @@ const GHOST_LIFT = 44;
 
 interface Pending { index: number; slot: number; letter: number }
 type DragSource = { kind: "rack"; slot: number } | { kind: "board"; index: number };
-interface Drag { source: DragSource; x: number; y: number; over: number | null; overRack: boolean }
+interface Drag { source: DragSource; x: number; y: number; over: number | null; overRack: boolean; insert: number | null }
+
+/** Ordre de l'atril: el que el jugador s'havia preparat, i les fitxes noves al final. */
+function arrangedOrder(st: GameState): number[] {
+  const rack = st.players[st.current]!.rack;
+  const saved = loadArrangement(st.gameId, st.current) ?? [];
+  const order: number[] = [];
+  for (const t of saved) {
+    const slot = rack.findIndex((x, i) => x === t && !order.includes(i));
+    if (slot >= 0) order.push(slot);
+  }
+  rack.forEach((_, i) => { if (!order.includes(i)) order.push(i); });
+  return order;
+}
+
+/** Mou un element d'una llista a una altra posició. */
+const moveTo = (list: number[], item: number, at: number) => {
+  const rest = list.filter(x => x !== item);
+  rest.splice(Math.max(0, Math.min(at, rest.length)), 0, item);
+  return rest;
+};
 
 export function TileFace({ tile, letter }: { tile: number; letter: number }) {
   const label = TILE_LABELS[letter] ?? "?";
@@ -101,7 +122,7 @@ export function GameScreen({ state, isWord, onCommit, onMenu }: {
   const player = state.players[me]!;
   const [pending, setPending] = useState<Pending[]>([]);
   const [selected, setSelected] = useState<number | null>(null);
-  const [order, setOrder] = useState<number[]>(() => player.rack.map((_, i) => i));
+  const [order, setOrder] = useState<number[]>(() => arrangedOrder(state));
   const [zoom, setZoom] = useState(false);
   const [blankCell, setBlankCell] = useState<{ index: number; slot: number } | null>(null);
   const [exchange, setExchange] = useState<Set<number> | null>(null);
@@ -111,15 +132,22 @@ export function GameScreen({ state, isWord, onCommit, onMenu }: {
   const [drag, setDrag] = useState<Drag | null>(null);
 
   // Els gestos d'arrossegar es processen fora del cicle de Preact: necessiten l'estat més recent
-  const latest = useRef({ pending, state, player });
-  latest.current = { pending, state, player };
+  const latest = useRef({ pending, state, player, order });
+  latest.current = { pending, state, player, order };
   const suppressClick = useRef(false);
 
   // Nou torn o nou atril: reinicia l'estat de pantalla
   useEffect(() => {
     setPending([]); setSelected(null); setExchange(null); setOffer(null); setDrag(null);
-    setOrder(state.players[state.current]!.rack.map((_, i) => i));
+    setOrder(arrangedOrder(state));
   }, [state.seq]);
+
+  /** Canvia l'ordre de l'atril i el recorda per als torns següents. */
+  const updateOrder = (o: number[]) => {
+    setOrder(o);
+    const { state: st, player: pl } = latest.current;
+    saveArrangement(st.gameId, st.current, o.map(s => pl.rack[s]!));
+  };
 
   const used = new Set(pending.map(p => p.slot));
   const placements: Placement[] = pending.map(p => ({ index: p.index, tile: player.rack[p.slot]!, letter: p.letter }));
@@ -174,11 +202,28 @@ export function GameScreen({ state, isWord, onCommit, onMenu }: {
   };
 
   // ---- Arrossegar (Pointer Events: dit, ratolí i llapis amb el mateix codi)
-  const hitTest = (x: number, y: number) => {
+  const hitTest = (x0: number, y0: number, dragged: number | null) => {
+    // El dit pot sortir una mica de la pantalla: es retalla a la zona visible
+    const x = Math.min(Math.max(x0, 1), window.innerWidth - 2);
+    const y = Math.min(Math.max(y0, GHOST_LIFT + 1), window.innerHeight - 2);
     const el = document.elementFromPoint(x, y - GHOST_LIFT);
     const cell = el?.closest<HTMLElement>("[data-i]");
-    return { over: cell ? Number(cell.dataset.i) : null, overRack: !!el?.closest(".rack") };
+    // L'atril es detecta on hi ha el dit (és a baix de tot) o on hi ha la fitxa
+    const rack = document.elementFromPoint(x, y)?.closest<HTMLElement>(".rack") ?? el?.closest<HTMLElement>(".rack");
+    let insert: number | null = null;
+    if (rack && !cell) {
+      // Posició on quedaria la fitxa: quantes fitxes de l'atril queden a l'esquerra del dit
+      const centers = [...rack.querySelectorAll<HTMLElement>("[data-slot]")]
+        .filter(b => Number(b.dataset.slot) !== dragged)
+        .map(b => { const r = b.getBoundingClientRect(); return r.left + r.width / 2; });
+      insert = centers.filter(c => c < x).length;
+    }
+    return { over: cell ? Number(cell.dataset.i) : null, overRack: !!rack && !cell, insert };
   };
+
+  /** Posició de l'atril (slot) de la fitxa que s'arrossega. */
+  const slotOf = (source: DragSource): number | null =>
+    source.kind === "rack" ? source.slot : latest.current.pending.find(p => p.index === source.index)?.slot ?? null;
 
   const startDrag = (e: PointerEvent, source: DragSource) => {
     if (exchange || e.button > 0) return;
@@ -188,7 +233,7 @@ export function GameScreen({ state, isWord, onCommit, onMenu }: {
       if (!dragging && Math.hypot(ev.clientX - x0, ev.clientY - y0) < DRAG_THRESHOLD) return;
       dragging = true;
       ev.preventDefault();
-      setDrag({ source, x: ev.clientX, y: ev.clientY, ...hitTest(ev.clientX, ev.clientY) });
+      setDrag({ source, x: ev.clientX, y: ev.clientY, ...hitTest(ev.clientX, ev.clientY, slotOf(source)) });
     };
     const end = (ev: PointerEvent) => {
       window.removeEventListener("pointermove", move);
@@ -199,10 +244,12 @@ export function GameScreen({ state, isWord, onCommit, onMenu }: {
       setTimeout(() => { suppressClick.current = false; }, 350);
       setDrag(null);
       if (ev.type === "pointercancel") return;
-      const { over, overRack } = hitTest(ev.clientX, ev.clientY);
-      const { pending: pend, state: st } = latest.current;
+      const slot = slotOf(source);
+      const { over, overRack, insert } = hitTest(ev.clientX, ev.clientY, slot);
+      const { pending: pend, state: st, order: ord } = latest.current;
       const free = over !== null && !st.board[over] && !pend.some(p => p.index === over);
       setFlash(null);
+      if (overRack && insert !== null && slot !== null) updateOrder(moveTo(ord, slot, insert)); // reordena l'atril
       if (source.kind === "rack") {
         if (free) placeFromRack(source.slot, over!);
       } else if (free) {
@@ -226,7 +273,7 @@ export function GameScreen({ state, isWord, onCommit, onMenu }: {
   const shuffleRack = () => {
     const o = [...order];
     for (let i = o.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [o[i], o[j]] = [o[j]!, o[i]!]; }
-    setOrder(o);
+    updateOrder(o);
   };
 
   const status = flash
@@ -246,6 +293,9 @@ export function GameScreen({ state, isWord, onCommit, onMenu }: {
   })();
   const dragSlot = drag?.source.kind === "rack" ? drag.source.slot : null;
   const dragCell = drag?.source.kind === "board" ? drag.source.index : null;
+  // Mentre s'arrossega per sobre de l'atril, es veu com quedarà l'ordre
+  const movingSlot = drag ? slotOf(drag.source) : null;
+  const shownOrder = drag?.overRack && drag.insert !== null && movingSlot !== null ? moveTo(order, movingSlot, drag.insert) : order;
 
   return (
     <div class={`game${drag ? " dragging" : ""}`}>
@@ -263,13 +313,18 @@ export function GameScreen({ state, isWord, onCommit, onMenu }: {
       )}
 
       <div class={`rack${drag?.overRack && dragCell !== null ? " drop" : ""}`} aria-label="El teu atril">
-        {order.map(slot => {
+        {shownOrder.map(slot => {
           const t = player.rack[slot];
           if (t === undefined) return null;
           const cls = ["rtile", used.has(slot) || dragSlot === slot ? "used" : "", selected === slot ? "sel" : "", exchange?.has(slot) ? "sel" : "", t === BLANK ? "blank" : ""].join(" ");
           return (
-            <button key={slot} class={cls} onClick={() => onSlot(slot)} aria-label={t === BLANK ? "escarràs" : TILE_LABELS[t]}
-              onPointerDown={used.has(slot) ? undefined : (e: PointerEvent) => startDrag(e, { kind: "rack", slot })}>
+            <button key={slot} data-slot={slot} class={cls} onClick={() => onSlot(slot)} aria-label={t === BLANK ? "escarràs" : TILE_LABELS[t]}
+              onPointerDown={(e: PointerEvent) => {
+                if (!used.has(slot)) { startDrag(e, { kind: "rack", slot }); return; }
+                // Una fitxa ja posada al tauler: arrossegar-la des de l'atril la mou de lloc a l'atril
+                const p = pending.find(q => q.slot === slot);
+                if (p) startDrag(e, { kind: "board", index: p.index });
+              }}>
               <TileFace tile={t} letter={t} />
             </button>
           );

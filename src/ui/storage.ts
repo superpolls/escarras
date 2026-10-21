@@ -44,3 +44,27 @@ export function clearGame(): void {
 export async function askPersistence(): Promise<void> {
   try { await navigator.storage?.persist?.(); } catch { /* res */ }
 }
+
+/**
+ * Ordre de l'atril que cada jugador s'ha preparat (només en aquest mòbil).
+ * Es desa per fitxes, no per posicions: en robar fitxes noves, les que ja tenies mantenen l'ordre.
+ */
+const RACK_KEY = "escarras-atrils-v1";
+
+export function loadArrangement(gameId: string, player: number): number[] | null {
+  try {
+    const j = JSON.parse(localStorage.getItem(RACK_KEY) ?? "null") as { gameId: string; racks: Record<string, number[]> } | null;
+    return j?.gameId === gameId ? j.racks[player] ?? null : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveArrangement(gameId: string, player: number, tiles: number[]): void {
+  try {
+    const j = JSON.parse(localStorage.getItem(RACK_KEY) ?? "null") as { gameId: string; racks: Record<string, number[]> } | null;
+    const racks = j?.gameId === gameId ? j.racks : {};
+    racks[player] = tiles;
+    localStorage.setItem(RACK_KEY, JSON.stringify({ gameId, racks }));
+  } catch { /* res */ }
+}
