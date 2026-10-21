@@ -11,6 +11,8 @@
       "vite/client"
     ],
     "skipLibCheck": true,
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
     "jsx": "react-jsx",
     "jsxImportSource": "preact",
     "lib": [

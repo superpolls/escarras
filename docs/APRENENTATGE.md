@@ -148,3 +148,27 @@ Es construeix en mig segon amb `npm run lexicon`. El script comprova primer l'em
 
 **Cada navegador és un món.** Safari, Chrome, l'app instal·lada i el navegador intern d'una app de missatgeria guarden les dades per separat. Si el mateix enllaç s'obre en dos llocs, per a l'app són dos mòbils diferents. La partida no es perd (és al servidor, o al QR de qualsevol altre mòbil), però aquell mòbil ha de tornar a dir quin jugador és, i un altre ho confirma.
 
+
+## 10. M4 + M4b · Diversos mòbils: QR i en línia amb la mateixa lògica
+
+**Un sol bloc.** Després de cada acció, el mòbil fa un paquet: l'estat sencer, les empremtes de les versions anteriors i, al QR, la clau de la partida. El QR i el servidor porten el mateix paquet (al servidor, xifrat). Així hi ha una sola manera de sincronitzar, i el que s'ha provat per a un canal val per a l'altre.
+
+**Rebre una versió.** Si és la següent de la meva, el meu motor repeteix l'acció i ha de donar exactament el mateix (verificació per repetició). Si me'n falten de pel mig, miro si entre les empremtes que porta hi ha la de la meva versió: si hi és, «salto endavant». Si és més antiga, no faig res.
+
+**Bifurcacions.** Dos mòbils poden fer versions diferents a partir de la mateixa (per exemple, algú desfà quan l'altre ja ha jugat). Guanya la branca més llarga; a igual llargada, una jugada guanya a un vot, i un vot a un desfer. Si encara empaten, en línia mana el servidor (qui hi ha arribat primer) i amb QR ho trieu vosaltres.
+
+**Rebase.** Qui perd una bifurcació no perd la feina: el seu mòbil torna a aplicar les seves accions sobre la versió guanyadora, si encara són vàlides. S'atura al primer desfer o a la primera acció que ja no val, i avisa del que s'ha descartat. És el mateix concepte que fa servir git.
+
+**Candau al servidor (concurrència optimista).** El mòbil diu «publico la versió 8 i parteixo de la 7». La regla de Firebase només ho accepta si la del servidor és la 7. Si algú ha publicat abans, la regla ho rebutja; el mòbil llegeix la nova, fa rebase i ho torna a provar. Ningú no bloqueja ningú i no es pot perdre res.
+
+**Clau a l'enllaç.** El que hi ha darrere del `#` d'una adreça no s'envia mai al servidor web. D'aquesta clau surten l'adreça de la sala i la clau de xifratge (AES-GCM). Firebase només veu números de versió i dades xifrades; si algú les alterés, el xifratge ho detectaria.
+
+**Escoltar sense llibreria.** Firebase permet escoltar una adreça amb *Server-Sent Events*: una connexió oberta per on el servidor envia els canvis. Si no funciona, l'app pregunta cada 4 segons. Sense la llibreria de Firebase, l'app ocupa ~60 KB menys i no necessita claus d'API.
+
+**Seients.** Cada jugador té un seient al servidor amb el mateix candau. Qui obre l'enllaç agafa el primer lliure. Per recuperar un seient des d'un altre mòbil, un altre jugador ho ha de confirmar; amb QR, ensenyar el codi ja és donar el permís.
+
+**Proves.** Una simulació de 150 partides amb tres mòbils, QR passats a l'atzar, desfers i abandonaments sempre acaba amb els tres mòbils iguals. Un servidor fals amb les mateixes regles que Firebase permet provar el candau, la desconnexió i la recuperació. Una prova al navegador fa jugar tres mòbils simulats: invitació per enllaç, jugades que arriben soles, paraula acceptada per l'altre, partida sense connexió amb QR i recuperació d'un seient.
+
+**Lliçó 6 · l'estat que es veu ha d'avisar quan canvia.** La pantalla de convidar no mostrava «té mòbil ✓» perquè la sessió actualitzava els seients però no avisava la pantalla. Regla: qualsevol dada que es mostri, quan canvia, ha de provocar que es torni a dibuixar.
+
+**Lliçó 7 · una acció, una versió.** Proposar i acceptar en el mateix mòbil feia dues accions d'un sol cop, i la rèplica ho rebutjava perquè la versió saltava de dos en dos. Cada acció ha de ser una versió pròpia: així qualsevol mòbil la pot verificar repetint-la.

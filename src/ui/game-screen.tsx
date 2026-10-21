@@ -54,7 +54,7 @@ export function TileFace({ tile, letter }: { tile: number; letter: number }) {
   );
 }
 
-function Board({ state, pending, bad, good, dropCell, zoom, onCell, onPendingDown }: {
+export function Board({ state, pending, bad, good, dropCell, zoom, onCell, onPendingDown, proposed = [] }: {
   state: GameState;
   pending: Pending[];
   bad: Set<number>;
@@ -63,6 +63,8 @@ function Board({ state, pending, bad, good, dropCell, zoom, onCell, onPendingDow
   zoom: boolean;
   onCell: (i: number) => void;
   onPendingDown: (e: PointerEvent, i: number) => void;
+  /** Fitxes d'una jugada pendent d'aprovació (D-21), per veure-la al tauler. */
+  proposed?: Placement[];
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const last = useMemo(() => {
@@ -71,6 +73,7 @@ function Board({ state, pending, bad, good, dropCell, zoom, onCell, onPendingDow
   }, [state]);
   const rack = state.players[state.current]!.rack;
   const byCell = new Map(pending.map(p => [p.index, p]));
+  const shown = new Map(proposed.map(p => [p.index, p]));
 
   // En ampliar, centra la zona on s'està jugant
   useEffect(() => {
@@ -87,17 +90,19 @@ function Board({ state, pending, bad, good, dropCell, zoom, onCell, onPendingDow
         {Array.from({ length: CELLS }, (_, i) => {
           const c = state.board[i];
           const p = byCell.get(i);
+          const q = shown.get(i);
           const prem = PREMIUMS[i];
           const cls = [
             "cell", prem ? `p-${prem}` : "", c ? "tile" : "", c?.tile === BLANK ? "blank" : "",
             p ? "tile pending" : "", p && bad.has(i) ? "bad" : "", p && good ? "good" : "", p && rack[p.slot] === BLANK ? "blank" : "",
-            last.has(i) ? "last" : "", dropCell === i && !c ? "drop" : "",
+            last.has(i) ? "last" : "", dropCell === i && !c ? "drop" : "", q && !c ? "tile proposed" : "",
           ].join(" ");
           return (
             <div key={i} data-i={i} class={cls} onClick={() => onCell(i)}
               onPointerDown={p ? (e: PointerEvent) => onPendingDown(e, i) : undefined}>
               {c ? <TileFace tile={c.tile} letter={c.letter} />
                 : p ? <TileFace tile={rack[p.slot]!} letter={p.letter} />
+                : q ? <TileFace tile={q.tile} letter={q.letter} />
                 : i === CENTER ? <span class="star">★</span>
                 : prem ? <span class="prem">{PREMIUM_LABEL[prem]}</span> : null}
             </div>
@@ -108,15 +113,19 @@ function Board({ state, pending, bad, good, dropCell, zoom, onCell, onPendingDow
   );
 }
 
-function Modal({ children }: { children: preact.ComponentChildren }) {
+export function Modal({ children }: { children: preact.ComponentChildren }) {
   return <div class="modal-back"><div class="modal" role="dialog">{children}</div></div>;
 }
 
-export function GameScreen({ state, isWord, onCommit, onMenu }: {
+export function GameScreen({ state, isWord, onCommit, onMenu, approverHere, net, banners }: {
   state: GameState;
   isWord: IsWord;
   onCommit: (next: GameState) => void;
   onMenu: () => void;
+  /** El jugador que ha d'acceptar una paraula és en aquest mateix mòbil (D-21). */
+  approverHere: boolean;
+  net?: string;
+  banners?: preact.ComponentChildren;
 }) {
   const me = state.current;
   const player = state.players[me]!;
@@ -137,11 +146,13 @@ export function GameScreen({ state, isWord, onCommit, onMenu }: {
   latest.current = { pending, state, player, order };
   const suppressClick = useRef(false);
 
-  // Nou torn o nou atril: reinicia l'estat de pantalla
+  // Nou torn, atril o tauler: reinicia l'estat de pantalla. Si arriba una versió que no els toca
+  // (un vot o un abandonament d'un altre mòbil), les fitxes que s'estan col·locant es conserven.
+  const turnKey = `${state.gameId}:${state.turn === 0 ? 0 : state.current}:${player.rack.join(",")}:${state.board.filter(Boolean).length}`;
   useEffect(() => {
     setPending([]); setSelected(null); setExchange(null); setOffer(null); setDrag(null);
     setOrder(arrangedOrder(state));
-  }, [state.seq]);
+  }, [turnKey]);
 
   /** Canvia l'ordre de l'atril i el recorda per als torns següents. */
   const updateOrder = (o: number[]) => {
@@ -292,9 +303,10 @@ export function GameScreen({ state, isWord, onCommit, onMenu }: {
     const n = tryApply({ type: "propose", placements });
     setAskApproval(false);
     if (!n) return;
-    // En un sol mòbil, el jugador següent és al costat i ho accepta en aquest mateix mòbil
     const approver = proposalApprover(n);
-    if (approver !== null) onCommit(applyAction(n, { type: "approve" }, isWord, approver));
+    // Si el jugador següent és en aquest mòbil, ho accepta aquí mateix; si no, la proposta li arriba pel servidor o pel QR
+    onCommit(n); // la proposta és una versió; l'acceptació, la següent
+    if (approverHere && approver !== null) onCommit(applyAction(n, { type: "approve" }, isWord, approver));
   };
   const kind = (rack: number[]) => (rack.every(t => VOWELS.has(t)) ? "vocals" : "consonants");
 
@@ -312,7 +324,8 @@ export function GameScreen({ state, isWord, onCommit, onMenu }: {
 
   return (
     <div class={`game${drag ? " dragging" : ""}`}>
-      <Scorebar state={state} code={controlCode(state)} onMenu={onMenu} />
+      <Scorebar state={state} code={controlCode(state)} onMenu={onMenu} net={net} />
+      {banners}
       <Board state={state} pending={pending.filter(p => p.index !== dragCell)} bad={bad} good={!!check?.ok}
         dropCell={drag?.over ?? null} zoom={zoom} onCell={onCell}
         onPendingDown={(e, i) => startDrag(e, { kind: "board", index: i })} />
@@ -384,7 +397,7 @@ export function GameScreen({ state, isWord, onCommit, onMenu }: {
         </Modal>
       )}
 
-      {askApproval && unknownWords && (
+      {askApproval && unknownWords && (approverHere ? (
         <Modal>
           <h2>{approverName}, acceptes {unknownWords.length === 1 ? "la paraula" : "les paraules"}?</h2>
           <p><strong>{unknownWords.join(", ")}</strong> no {unknownWords.length === 1 ? "és" : "són"} al diccionari. Si l'acceptes, la jugada val i la paraula servirà per a la resta de la partida.</p>
@@ -393,7 +406,16 @@ export function GameScreen({ state, isWord, onCommit, onMenu }: {
             <button onClick={() => setAskApproval(false)}>No</button>
           </div>
         </Modal>
-      )}
+      ) : (
+        <Modal>
+          <h2>Demanar a {approverName} que l'accepti?</h2>
+          <p><strong>{unknownWords.join(", ")}</strong> no {unknownWords.length === 1 ? "és" : "són"} al diccionari. Li arribarà la jugada i, si l'accepta, valdrà i la paraula servirà per a la resta de la partida.</p>
+          <div class="row">
+            <button class="primary" onClick={approveByNext}>Envia-li</button>
+            <button onClick={() => setAskApproval(false)}>Cancel·la</button>
+          </div>
+        </Modal>
+      ))}
 
       {confirmPass && (
         <Modal>
