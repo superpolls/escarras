@@ -46,3 +46,32 @@ Falta la prova real: dos mòbils, a casa, al cotxe i al sol.
 - Versió 2.18.25, 584.095 formes, en majúscules i sense accents.
 - **Llicència lliure:** GPLv3 o CC-BY-SA 3.0, a elecció. Es pot fer servir i redistribuir citant l'autor (Joan Montané) i mantenint la mateixa llicència per al que en derivi.
 - Format compatible amb el reglament: cap Y fora de NY, cap Q sense U, cap K ni W; la ela geminada apareix com a `L·L`.
+
+## 4. M1 · El lèxic
+
+**Problema:** 584.095 paraules en text ocupen 6,5 MB. El mòbil ha de comprovar una paraula en mil·lisegons, sense xarxa, i ocupar poc.
+
+**Pas 1 · De lletres a fitxes.** Cada paraula es converteix a la seqüència de fitxes amb què es juga: `IL·LUS` → I · L·L · U · S (4 fitxes). Cada fitxa té un número (1 = A … 26 = Z), en ordre alfabètic català.
+
+**Pas 2 · DAWG (graf acíclic dirigit de paraules).** Les paraules comparteixen principis (CANT-AR, CANT-EM) i finals (-ARIEM, -ARÍEU). Un DAWG les guarda com un graf on cada camí des de l'arrel és una paraula, i els trossos repetits es guarden només una vegada.
+- Construcció: algorisme de Daciuk (2000). Les paraules entren ordenades; a mesura que s'avança, cada branca acabada es compara amb les ja guardades i, si n'hi ha una d'idèntica, es reutilitza.
+- Cada aresta del graf ocupa 4 bytes: la fitxa, si és l'última del node, si hi acaba una paraula i on continua.
+- Consultar una paraula = recórrer com a molt 15 nodes.
+
+**Resultat**
+
+| | Mida |
+|---|---|
+| Text del DISC | 6,5 MB |
+| DAWG (110.869 arestes) | 443 KB |
+| DAWG comprimit en la descàrrega (gzip) | 252 KB |
+
+Es construeix en mig segon amb `npm run lexicon`. El script comprova primer l'empremta (sha256) del zip del DISC: si algú el canvia, no construeix res. Això fa que el resultat sigui **reproduïble**: la mateixa entrada dona sempre exactament el mateix fitxer.
+
+**Pas 3 · Verificació (tests automàtics)**
+- Les 584.095 formes del DISC hi són, i cap altra (es recorre tot el graf i es compara).
+- 20.000 paraules inventades per mutació: el lèxic respon igual que la llista original.
+- Barbarismes rebutjats. **Lliçó:** dues paraules que semblaven barbarismes (PUES, ACERA) són catalanes: plural de «pua» i forma d'«acerar». Abans de dir que una paraula no és vàlida, cal comprovar els homògrafs.
+- Mostra de 71 formes valencianes i balears: totes hi són. **Lliçó:** tres errors de la primera mostra eren meus (PUGUERA → POGUERA, ESSE → EIXE): les llistes de prova també s'han de verificar contra una font.
+
+**Què és un test automàtic:** un programa que crida el codi amb casos coneguts i compara el resultat amb l'esperat. S'executa cada vegada que es canvia alguna cosa (`npm test`). Si una regla es trenca, se sap a l'instant.

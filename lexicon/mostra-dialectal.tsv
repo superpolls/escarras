@@ -1,0 +1,73 @@
+# Mostra de formes valencianes i balears per mesurar la cobertura del DISC.
+# forma	varietat	tipus	nota
+PARLE	valencià	verb	1a sg. present indicatiu (GIEC, AVL)
+CANTE	valencià	verb	1a sg. present indicatiu
+MENGE	valencià	verb	1a sg. present indicatiu
+SERVISC	valencià	verb	incoatiu en -isc
+SERVIX	valencià	verb	incoatiu en -ix
+SERVIXEN	valencià	verb	incoatiu en -ixen
+SERVISCA	valencià	verb	subjuntiu incoatiu
+SERVISQUEN	valencià	verb	subjuntiu incoatiu
+PATISC	valencià	verb	incoatiu en -isc
+PATIX	valencià	verb	incoatiu en -ix
+PATIXEN	valencià	verb	incoatiu en -ixen
+PATISCA	valencià	verb	subjuntiu incoatiu
+ISC	valencià	verb	eixir, 1a sg.
+IXEN	valencià	verb	eixir, 3a pl.
+ISCA	valencià	verb	eixir, subjuntiu
+PARLARA	valencià	verb	imperfet de subjuntiu en -ara
+PARLARES	valencià	verb	imperfet de subjuntiu en -ares
+CANTARA	valencià	verb	imperfet de subjuntiu en -ara
+TINGUERA	valencià	verb	imperfet de subjuntiu
+VINGUERA	valencià	verb	imperfet de subjuntiu
+FERA	valencià	verb	imperfet de subjuntiu
+DIGUERA	valencià	verb	imperfet de subjuntiu
+ESTIGUERA	valencià	verb	imperfet de subjuntiu
+POGUERA	valencià	verb	imperfet de subjuntiu
+HAGUERA	valencià	verb	imperfet de subjuntiu
+ESTE	valencià	demostratiu	
+ESTA	valencià	demostratiu	
+ESTOS	valencià	demostratiu	
+ESTES	valencià	demostratiu	
+EIXE	valencià	demostratiu	
+EIXA	valencià	demostratiu	
+EIXOS	valencià	demostratiu	
+EIXES	valencià	demostratiu	
+MEUA	valencià	possessiu	
+TEUA	valencià	possessiu	
+SEUA	valencià	possessiu	
+MEUES	valencià	possessiu	
+HUI	valencià	adverbi	
+ACI	valencià	adverbi	
+XIQUET	valencià	nom	
+XIQUETA	valencià	nom	
+XICOTET	valencià	adjectiu	
+CREILLA	valencià	nom	
+TOMACA	valencià	nom	
+EIXIR	valencià	verb	
+EIXIM	valencià	verb	
+PARL	balear	verb	1a sg. present sense desinència (GIEC)
+CANT	balear	verb	1a sg. present sense desinència
+MENJ	balear	verb	1a sg. present sense desinència
+CANTAM	balear	verb	1a pl. present en -am
+CANTAU	balear	verb	2a pl. present en -au
+PARLAM	balear	verb	1a pl. present en -am
+PARLAU	balear	verb	2a pl. present en -au
+CANTAS	balear	verb	imperfet de subjuntiu (cantàs)
+CANTASSIS	balear	verb	imperfet de subjuntiu
+PARLASSIS	balear	verb	imperfet de subjuntiu
+DUC	balear	verb	dur, 1a sg.
+VEIM	balear	verb	veure, 1a pl.
+FEIM	balear	verb	fer, 1a pl.
+DEIM	balear	verb	dir, 1a pl.
+DUIM	balear	verb	dur, 1a pl.
+AL·LOT	balear	nom	
+AL·LOTA	balear	nom	
+AL·LOTS	balear	nom	
+MOIX	balear	nom	
+MOIXA	balear	nom	
+QUALQUE	balear	determinant	
+QUALCU	balear	pronom	
+DEMATI	balear	nom	
+ENSAIMADA	balear	nom	
+SOBRASSADA	balear	nom	
