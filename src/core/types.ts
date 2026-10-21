@@ -15,8 +15,9 @@ export interface Placement {
 
 /**
  * Accions. Qui les pot fer (D-12):
- * - play, exchange, pass, senyors, join, rejoin: el mòbil de qui té el torn.
+ * - play, exchange, pass, senyors, join, rejoin, propose: el mòbil de qui té el torn.
  * - leave, vote-remove: el mòbil del jugador que actua, en qualsevol moment.
+ * - approve, reject: el mòbil de cada jugador que ha d'aprovar (o de qui ha proposat, per retirar-la).
  */
 export type Action =
   | { type: "play"; placements: Placement[] }
@@ -31,7 +32,23 @@ export type Action =
   /** Acceptar un jugador nou (D-15). */
   | { type: "join"; name: string }
   /** Acceptar el retorn d'un jugador retirat o tret (D-15). */
-  | { type: "rejoin"; player: number };
+  | { type: "rejoin"; player: number }
+  /** Proposar una jugada amb paraules que el diccionari no té, perquè l'aprovin (D-21). */
+  | { type: "propose"; placements: Placement[]; quorum: Quorum }
+  /** Aprovar la jugada proposada (D-21). */
+  | { type: "approve" }
+  /** Rebutjar la jugada proposada, o retirar-la qui l'ha proposat (D-21). */
+  | { type: "reject" };
+
+/** Qui ha d'aprovar una proposta: tots els altres actius (amb connexió) o el jugador següent (sense connexió). */
+export type Quorum = "all" | "next";
+
+export interface Proposal {
+  player: number;
+  placements: Placement[];
+  quorum: Quorum;
+  approvals: number[];
+}
 
 export interface LastAction {
   player: number;
@@ -81,6 +98,10 @@ export interface GameState {
   scoreless: number;
   /** Votació en curs per treure un jugador absent. */
   removal: { target: number; votes: number[] } | null;
+  /** Jugada pendent d'aprovació (D-21). */
+  proposal: Proposal | null;
+  /** Paraules aprovades en aquesta partida: valen fins al final (D-21). */
+  approvedWords: number[][];
   last: LastAction | null;
   /** Sorteig d'inici: una fila per ronda; fitxa treta per cada jugador inicial, o -1 si no hi participava. */
   startDraw: number[][];

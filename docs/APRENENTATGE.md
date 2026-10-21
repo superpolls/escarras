@@ -131,3 +131,9 @@ Es construeix en mig segon amb `npm run lexicon`. El script comprova primer l'em
 **Reordenar l'atril.** Arrossegant una fitxa dins l'atril es canvia de posició, i mentre el dit es mou es veu com quedarà. L'ordre es desa per fitxes (no per posicions) i només en aquest mòbil: quan robes fitxes noves, les que ja tenies conserven l'ordre i les noves van al final.
 
 **Lliçó 5 · els límits de la pantalla.** La prova portava el dit 9 píxels fora de la pantalla, i allà el navegador no troba cap element. Un dit de veritat també pot arribar a la vora, així que ara les coordenades es retallen a la zona visible.
+
+## 8. Paraules aprovades pels jugadors
+
+**Proposta en lloc de jugada.** Si una paraula no és al diccionari però la posició és correcta, el jugador la pot proposar. La jugada no s'aplica fins que l'aproven: amb connexió, tots els altres; sense connexió, el següent en escanejar el QR. Si algú la rebutja, no cal desfer res, perquè no s'havia aplicat. Quan s'aprova, el motor l'aplica en l'acció de l'últim vot, i qualsevol mòbil pot comprovar-ho repetint-la.
+
+**Diccionari viu.** Les paraules aprovades valen fins al final de la partida i es llisten a la pantalla final. És la manera d'anar completant el diccionari amb l'ús real.

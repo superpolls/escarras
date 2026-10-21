@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { CELLS, CENTER, PREMIUMS } from "../core/board";
 import {
-  applyAction, checkPlay, EngineError, senyorsAtTurnStart, senyorsAvailable, swapSenyors, type IsWord,
+  applyAction, checkPlay, EngineError, requiredApprovers, senyorsAtTurnStart, senyorsAvailable, swapSenyors, type IsWord,
 } from "../core/game";
 import { BLANK, TILE_LABELS, TILE_VALUES, VOWELS } from "../core/tiles";
 import type { Action, GameState, Placement } from "../core/types";
@@ -130,6 +130,7 @@ export function GameScreen({ state, isWord, onCommit, onMenu }: {
   const [offer, setOffer] = useState<GameState | null>(null); // senyors després de robar
   const [flash, setFlash] = useState<string | null>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
+  const [askApproval, setAskApproval] = useState(false);
 
   // Els gestos d'arrossegar es processen fora del cicle de Preact: necessiten l'estat més recent
   const latest = useRef({ pending, state, player, order });
@@ -283,6 +284,16 @@ export function GameScreen({ state, isWord, onCommit, onMenu }: {
     : errorText(check.error));
 
   const startOffer = senyorsAtTurnStart(state, me) && pending.length === 0 && !exchange;
+  // Paraules que el diccionari no té, amb la posició correcta: es pot demanar que les aprovin (D-21)
+  const unknownWords = check && !check.ok && check.error.code === "invalid-words" ? check.error.words : null;
+  const approveAll = () => {
+    let n = tryApply({ type: "propose", placements, quorum: "all" });
+    setAskApproval(false);
+    if (!n) return;
+    // En un sol mòbil, tots els altres jugadors hi són presents i ho accepten alhora
+    for (const p of requiredApprovers(n)) n = applyAction(n, { type: "approve" }, isWord, p);
+    onCommit(n);
+  };
   const kind = (rack: number[]) => (rack.every(t => VOWELS.has(t)) ? "vocals" : "consonants");
 
   // Fitxa que s'està arrossegant (per dibuixar-la sota el dit)
@@ -303,7 +314,10 @@ export function GameScreen({ state, isWord, onCommit, onMenu }: {
       <Board state={state} pending={pending.filter(p => p.index !== dragCell)} bad={bad} good={!!check?.ok}
         dropCell={drag?.over ?? null} zoom={zoom} onCell={onCell}
         onPendingDown={(e, i) => startDrag(e, { kind: "board", index: i })} />
-      <div class={`status${check && !check.ok && !exchange ? " bad" : check?.ok ? " good" : ""}`} role="status">{status}</div>
+      <div class={`status${check && !check.ok && !exchange ? " bad" : check?.ok ? " good" : ""}`} role="status">
+        {status}
+        {unknownWords && !exchange && !flash && <button class="ask" onClick={() => setAskApproval(true)}>Demana que l'aprovin</button>}
+      </div>
 
       {startOffer && (
         <div class="banner">
@@ -365,6 +379,17 @@ export function GameScreen({ state, isWord, onCommit, onMenu }: {
             ))}
           </div>
           <button onClick={() => setBlankCell(null)}>Cancel·la</button>
+        </Modal>
+      )}
+
+      {askApproval && unknownWords && (
+        <Modal>
+          <h2>Accepteu {unknownWords.length === 1 ? "la paraula" : "les paraules"}?</h2>
+          <p><strong>{unknownWords.join(", ")}</strong> no {unknownWords.length === 1 ? "és" : "són"} al diccionari. Si tots els altres jugadors hi esteu d'acord, la jugada val i la paraula servirà per a la resta de la partida.</p>
+          <div class="row">
+            <button class="primary" onClick={approveAll}>Sí, l'acceptem</button>
+            <button onClick={() => setAskApproval(false)}>No</button>
+          </div>
         </Modal>
       )}
 

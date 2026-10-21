@@ -11,6 +11,8 @@
  *                · atril: n(3) + fitxes(5 c/u)
  *   tauler: mapa d'ocupació (225), i per cada casella ocupada: escarràs(1) + fitxa(5)
  *   bossa: n(7) + fitxes(5 c/u)
+ *   proposta: hi ha(1) [+ jugador(3) + quòrum(1) + aprovacions(8) + n-1(3) + col·locacions(14 c/u)]
+ *   paraules aprovades: n(5) + per paraula: llargada(4) + fitxes(5 c/u)
  *   última acció: tipus(4); si n'hi ha: jugador(3) · punts(13) · senyors(2) · dades segons el tipus
  */
 import { CELLS } from "./board";
@@ -62,7 +64,12 @@ class BitReader {
 
 const ENDED = [null, "closed", "blocked", "abandoned"] as const;
 const STATUS: PlayerStatus[] = ["active", "retired", "removed"];
-const ACTION_TYPES = ["none", "play", "exchange", "pass", "undo", "senyors", "leave", "vote-remove", "join", "rejoin"] as const;
+const ACTION_TYPES = ["none", "play", "exchange", "pass", "undo", "senyors", "leave", "vote-remove", "join", "rejoin", "propose", "approve", "reject"] as const;
+
+const writePlacements = (w: BitWriter, ps: readonly { index: number; tile: number; letter: number }[]) => {
+  w.write(ps.length - 1, 3);
+  for (const p of ps) { w.write(p.index, 8); w.write(p.tile === 0 ? 1 : 0, 1); w.write(p.letter, 5); }
+};
 
 export function encodeState(s: GameState): Uint8Array {
   const w = new BitWriter();
@@ -106,6 +113,19 @@ export function encodeState(s: GameState): Uint8Array {
   w.write(s.bag.length, 7);
   for (const t of s.bag) w.write(t, 5);
 
+  w.write(s.proposal ? 1 : 0, 1);
+  if (s.proposal) {
+    w.write(s.proposal.player, 3);
+    w.write(s.proposal.quorum === "next" ? 1 : 0, 1);
+    w.write(s.proposal.approvals.reduce((m, v) => m | (1 << v), 0), 8);
+    writePlacements(w, s.proposal.placements);
+  }
+  w.write(s.approvedWords.length, 5);
+  for (const word of s.approvedWords) {
+    w.write(word.length, 4);
+    for (const t of word) w.write(t, 5);
+  }
+
   const last = s.last;
   w.write(last ? ACTION_TYPES.indexOf(last.action.type) : 0, 4);
   if (last) {
@@ -114,8 +134,10 @@ export function encodeState(s: GameState): Uint8Array {
     w.write(last.senyorsSwaps, 2);
     const a = last.action;
     if (a.type === "play") {
-      w.write(a.placements.length - 1, 3);
-      for (const p of a.placements) { w.write(p.index, 8); w.write(p.tile === 0 ? 1 : 0, 1); w.write(p.letter, 5); }
+      writePlacements(w, a.placements);
+    } else if (a.type === "propose") {
+      w.write(a.quorum === "next" ? 1 : 0, 1);
+      writePlacements(w, a.placements);
     } else if (a.type === "exchange") {
       w.write(a.tiles.length - 1, 3);
       for (const t of a.tiles) w.write(t, 5);
@@ -194,6 +216,24 @@ export function decodeState(bytes: Uint8Array): GameState {
   if (bagLen > 100) bad("Bossa");
   const bag = Array.from({ length: bagLen }, () => tile());
 
+  const readPlacements = () => Array.from({ length: r.read(3) + 1 }, () => {
+    const index = r.read(8);
+    if (index >= CELLS) bad("Casella");
+    const blank = r.read(1) === 1;
+    const letter = tile(false);
+    return { index, tile: blank ? 0 : letter, letter };
+  });
+  let proposal: GameState["proposal"] = null;
+  if (r.read(1)) {
+    const player = r.read(3);
+    const quorum = r.read(1) ? "next" as const : "all" as const;
+    const mask = r.read(8);
+    if (player >= n || mask >> n) bad("Proposta");
+    const approvals = Array.from({ length: n }, (_, i) => i).filter(i => mask & (1 << i));
+    proposal = { player, placements: readPlacements(), quorum, approvals };
+  }
+  const approvedWords = Array.from({ length: r.read(5) }, () => Array.from({ length: r.read(4) }, () => tile(false)));
+
   let last: LastAction | null = null;
   const type = ACTION_TYPES[r.read(4)] ?? bad("Acció");
   if (type !== "none") {
@@ -203,15 +243,10 @@ export function decodeState(bytes: Uint8Array): GameState {
     const senyorsSwaps = r.read(2);
     let action: LastAction["action"];
     if (type === "play") {
-      const count = r.read(3) + 1;
-      const placements = Array.from({ length: count }, () => {
-        const index = r.read(8);
-        if (index >= CELLS) bad("Casella");
-        const blank = r.read(1) === 1;
-        const letter = tile(false);
-        return { index, tile: blank ? 0 : letter, letter };
-      });
-      action = { type: "play", placements } satisfies Action;
+      action = { type: "play", placements: readPlacements() } satisfies Action;
+    } else if (type === "propose") {
+      const quorum = r.read(1) ? "next" as const : "all" as const;
+      action = { type, placements: readPlacements(), quorum };
     } else if (type === "exchange") {
       const count = r.read(3) + 1;
       action = { type: "exchange", tiles: Array.from({ length: count }, () => tile()) };
@@ -228,7 +263,7 @@ export function decodeState(bytes: Uint8Array): GameState {
   }
   if (r.bitsLeft >= 8) throw new Error("Dades sobrants");
 
-  return { gameId, rng, seq, turn, first, initialCount, players, order, current, board, bag, scoreless, removal, last, startDraw, ended, prevHash };
+  return { gameId, rng, seq, turn, first, initialCount, players, order, current, board, bag, scoreless, removal, proposal, approvedWords, last, startDraw, ended, prevHash };
 }
 
 /** Empremta d'un estat: els 8 primers bytes del SHA-256 de la seva forma canònica, en hexadecimal. */

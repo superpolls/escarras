@@ -25,6 +25,7 @@ export function errorText(e: MoveError): string {
     case "bad-exchange": return "Tria entre 1 i 7 fitxes per canviar.";
     case "table-full": return "Ja hi ha 4 jugadors.";
     case "vote-in-progress": return "Ja hi ha una votació en curs.";
+    case "proposal-pending": return "Hi ha una jugada pendent d'aprovació.";
     case "not-allowed": return "Ara no es pot fer.";
   }
 }

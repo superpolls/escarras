@@ -2,7 +2,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { checkPlay, createGame, MAX_NAME_CHARS, standings, undoState, canUndo, type IsWord } from "../core/game";
 import { TILE_LABELS } from "../core/tiles";
-import type { GameState } from "../core/types";
+import type { GameState, Placement } from "../core/types";
 import { GameScreen, TileFace } from "./game-screen";
 import { askPersistence, clearGame, loadGame, saveGame, type Saved } from "./storage";
 import { loadLexicon, newGameId, randomBytes, vibrate } from "./support";
@@ -181,9 +181,18 @@ function LastMove({ state, prev }: { state: GameState; prev: GameState | null })
   const who = state.players[last.player]!.name;
   const a = last.action;
   let text: string;
+  const wordsOf = (placements: Placement[]) => {
+    if (!prev) return "";
+    const c = checkPlay(prev, placements, () => true);
+    return c.ok ? c.result.words.map(w => w.letters.map(l => TILE_LABELS[l]).join("")).join(", ") : "";
+  };
   if (a.type === "play") {
-    const words = prev ? (() => { const c = checkPlay(prev, a.placements, () => true); return c.ok ? c.result.words.map(w => w.letters.map(l => TILE_LABELS[l]).join("")).join(", ") : ""; })() : "";
-    text = `${who} ha jugat ${words} · ${points(last.score)}`;
+    text = `${who} ha jugat ${wordsOf(a.placements)} · ${points(last.score)}`;
+  } else if (a.type === "approve" && prev) {
+    // Les fitxes noves són les que hi ha ara i abans no hi eren
+    const placed = state.board.flatMap((c, index) => (c && !prev.board[index] ? [{ index, tile: c.tile, letter: c.letter }] : []));
+    const mover = state.players[prev.current]!.name;
+    text = `${mover} ha jugat ${wordsOf(placed)} (aprovada per tothom) · ${points(last.score)}`;
   } else if (a.type === "exchange") text = `${who} ha canviat ${a.tiles.length} ${a.tiles.length === 1 ? "fitxa" : "fitxes"}`;
   else if (a.type === "pass") text = `${who} ha passat`;
   else if (a.type === "undo") text = `${who} ha desfet la jugada`;
@@ -205,6 +214,9 @@ function End({ state, onAgain, onHome }: { state: GameState; onAgain: () => void
         {ranking.map(i => <li key={i}><span>{state.players[i]!.name}{state.players[i]!.status === "removed" ? " (absent)" : ""}</span><strong>{state.players[i]!.score}</strong></li>)}
       </ol>
       {retired.length > 0 && <p class="sub">Retirats: {retired.map(p => `${p.name} (${p.score})`).join(", ")}</p>}
+      {state.approvedWords.length > 0 && (
+        <p class="sub">Paraules aprovades en aquesta partida: <strong>{state.approvedWords.map(w => w.map(t => TILE_LABELS[t]).join("")).join(", ")}</strong>. Si són correctes, es poden afegir al diccionari.</p>
+      )}
       <button class="primary big" onClick={onAgain}>Revenja amb els mateixos jugadors</button>
       <button class="link" onClick={onHome}>Inici</button>
     </main>

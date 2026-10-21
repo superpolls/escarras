@@ -6,7 +6,7 @@
 import { CELLS, CENTER, colOf, letterMultiplier, rowOf, SIZE, wordMultiplier } from "./board";
 import { stateHash } from "./codec";
 import { rngFromSeed, shuffle, type RngState } from "./rng";
-import { BLANK, TILE_DISTRIBUTION, TILE_LABELS, TILE_VALUES, tilesToWord, VOWELS } from "./tiles";
+import { BLANK, TILE_DISTRIBUTION, TILE_LABELS, TILE_VALUES, tilesToWord, VOWELS, wordToTiles } from "./tiles";
 import type { Action, Cell, GameState, Placement, Player } from "./types";
 
 export type IsWord = (tiles: readonly number[]) => boolean;
@@ -31,6 +31,7 @@ export type MoveError =
   | { code: "bad-exchange" }
   | { code: "table-full" }
   | { code: "vote-in-progress" }
+  | { code: "proposal-pending" }
   | { code: "not-allowed" };
 
 export class EngineError extends Error {
@@ -126,7 +127,7 @@ export function createGame({ gameId, seed, names }: NewGame): GameState {
     players: names.map(name => newPlayer(name)),
     order, current: draw0.first,
     board: new Array<Cell | null>(CELLS).fill(null),
-    bag, scoreless: 0, removal: null, last: null,
+    bag, scoreless: 0, removal: null, proposal: null, approvedWords: [], last: null,
     startDraw: draw0.rounds, ended: null, prevHash: "",
   };
   for (const p of order) draw(s, s.players[p]!.rack, RACK_SIZE); // (5) en ordre de joc
@@ -243,7 +244,9 @@ export function checkPlay(state: GameState, placements: readonly Placement[], is
     }
     return { cells, letters: cells.map(c => board[c]!.letter), score: sum * mult };
   });
-  const invalid = words.filter(w => !isWord(w.letters));
+  // Una paraula aprovada en aquesta partida val fins al final (D-21)
+  const approved = (t: number[]) => state.approvedWords.some(w => w.length === t.length && w.every((x, k) => x === t[k]));
+  const invalid = words.filter(w => !isWord(w.letters) && !approved(w.letters));
   if (invalid.length) {
     // Caselles de les paraules no vàlides, per marcar-les a la pantalla
     const cells = [...new Set(invalid.flatMap(w => w.cells))].sort((a, b) => a - b);
@@ -275,7 +278,50 @@ function dropPlayer(s: GameState, p: number, status: "retired" | "removed"): voi
     if (s.removal.target === p) s.removal = null;
     else s.removal.votes = s.removal.votes.filter(v => v !== p);
   }
+  if (s.proposal) {
+    if (s.proposal.player === p) s.proposal = null;
+    else s.proposal.approvals = s.proposal.approvals.filter(v => v !== p);
+  }
   s.scoreless = 0;
+}
+
+/** Qui ha d'aprovar la proposta en curs (D-21). */
+export function requiredApprovers(s: GameState): number[] {
+  const pr = s.proposal;
+  if (!pr) return [];
+  if (pr.quorum === "next") return s.order.length > 1 ? [nextInOrder(s, pr.player)] : [];
+  return activePlayers(s).filter(p => p !== pr.player);
+}
+
+/** Col·loca les fitxes d'una jugada vàlida, suma els punts i roba (19). Retorna els punts. */
+function doPlay(s: GameState, actor: number, placements: readonly Placement[], isWord: IsWord): { score: number; placements: Placement[] } {
+  const check = checkPlay(s, placements, isWord);
+  if (!check.ok) return fail(check.error);
+  const pl = s.players[actor]!;
+  const sorted = [...placements].sort((a, b) => a.index - b.index).map(x => ({ index: x.index, tile: x.tile, letter: x.letter }));
+  for (const x of sorted) {
+    pl.rack.splice(pl.rack.indexOf(x.tile), 1);
+    s.board[x.index] = { tile: x.tile, letter: x.letter };
+  }
+  pl.score += check.result.score;
+  draw(s, pl.rack, RACK_SIZE - pl.rack.length); // (19)
+  s.scoreless = 0; // una jugada vàlida fa avançar la partida, encara que valgui 0 punts (D-05)
+  return { score: check.result.score, placements: sorted };
+}
+
+/** Si tots els que han d'aprovar ho han fet, les paraules s'accepten i la jugada s'aplica (D-21). */
+function settleProposal(s: GameState, isWord: IsWord): { mover: number; score: number } | null {
+  const pr = s.proposal;
+  if (!pr) return null;
+  const required = requiredApprovers(s);
+  if (required.length === 0 || !required.every(p => pr.approvals.includes(p))) return null;
+  const check = checkPlay(s, pr.placements, isWord);
+  if (!check.ok && check.error.code === "invalid-words") {
+    for (const w of check.error.words) s.approvedWords.push(wordToTiles(w)!);
+  }
+  const { score } = doPlay(s, pr.player, pr.placements, isWord);
+  s.proposal = null;
+  return { mover: pr.player, score };
 }
 
 /** Si tots els altres actius han votat, el jugador queda tret (D-14). */
@@ -309,22 +355,44 @@ export function applyAction(state: GameState, action: Action, isWord: IsWord, ac
   const onTurn = () => { if (actor !== s.current) fail({ code: "not-your-turn" }); };
   let score = 0;
   let canonical: Action;
+  /** Jugador la jugada, el canvi o la passada del qual fa avançar el torn. */
+  let mover: number | null = null;
+  let played = false;
+  // Amb una proposta pendent, qui l'ha feta no pot fer res més fins que es resolgui (D-21)
+  const onTurnActions = ["play", "exchange", "pass", "senyors", "join", "rejoin", "propose"];
+  if (s.proposal && onTurnActions.includes(action.type)) fail({ code: "proposal-pending" });
 
   switch (action.type) {
     case "play": {
       onTurn();
-      const check = checkPlay(state, action.placements, isWord);
-      if (!check.ok) return fail(check.error);
+      const done = doPlay(s, actor, action.placements, isWord);
+      score = done.score;
+      mover = actor;
+      played = true;
+      canonical = { type: "play", placements: done.placements };
+      break;
+    }
+    case "propose": {
+      onTurn();
+      const check = checkPlay(s, action.placements, isWord);
+      if (check.ok) fail({ code: "not-allowed" }); // és vàlida: s'ha de jugar directament
+      else if (check.error.code !== "invalid-words") fail(check.error); // només per paraules, no per posició
       const placements = [...action.placements].sort((a, b) => a.index - b.index).map(x => ({ index: x.index, tile: x.tile, letter: x.letter }));
-      for (const x of placements) {
-        pl.rack.splice(pl.rack.indexOf(x.tile), 1);
-        s.board[x.index] = { tile: x.tile, letter: x.letter };
-      }
-      score = check.result.score;
-      pl.score += score;
-      draw(s, pl.rack, RACK_SIZE - pl.rack.length); // (19)
-      s.scoreless = 0; // una jugada vàlida fa avançar la partida, encara que valgui 0 punts (D-05)
-      canonical = { type: "play", placements };
+      s.proposal = { player: actor, placements, quorum: action.quorum, approvals: [] };
+      canonical = { type: "propose", placements, quorum: action.quorum };
+      break;
+    }
+    case "approve": {
+      if (!s.proposal || !requiredApprovers(s).includes(actor)) fail({ code: "not-allowed" });
+      if (!s.proposal!.approvals.includes(actor)) s.proposal!.approvals.push(actor);
+      s.proposal!.approvals.sort((a, b) => a - b);
+      canonical = { type: "approve" };
+      break;
+    }
+    case "reject": {
+      if (!s.proposal || (s.proposal.player !== actor && !requiredApprovers(s).includes(actor))) fail({ code: "not-allowed" });
+      s.proposal = null;
+      canonical = { type: "reject" };
       break;
     }
     case "exchange": {
@@ -345,12 +413,14 @@ export function applyAction(state: GameState, action: Action, isWord: IsWord, ac
       shuffle(s.rng, s.bag);
       pl.rack = rack;
       s.scoreless += 1;
+      mover = actor;
       canonical = { type: "exchange", tiles };
       break;
     }
     case "pass":
       onTurn();
       s.scoreless += 1; // (33)
+      mover = actor;
       canonical = { type: "pass" };
       break;
     case "senyors":
@@ -406,12 +476,18 @@ export function applyAction(state: GameState, action: Action, isWord: IsWord, ac
   // Si el jugador amenaçat de ser tret actua, la votació s'anul·la (D-14)
   if (s.removal?.target === actor) s.removal = null;
   settleRemoval(s);
+  const settled = settleProposal(s, isWord);
+  if (settled) {
+    mover = settled.mover;
+    score = settled.score;
+    played = true;
+  }
 
-  const advances = action.type === "play" || action.type === "exchange" || action.type === "pass";
-  if (advances) {
-    pl.senyors = 0;
-    pl.fresh = false;
-    s.current = nextInOrder(s, actor);
+  if (mover !== null) {
+    const m = s.players[mover]!;
+    m.senyors = 0;
+    m.fresh = false;
+    s.current = nextInOrder(s, mover);
   }
   s.last = { player: actor, action: canonical, score, senyorsSwaps: 0 };
   s.turn += 1;
@@ -420,13 +496,14 @@ export function applyAction(state: GameState, action: Action, isWord: IsWord, ac
 
   // Final de partida (22), adaptat a 2-4 jugadors
   const active = activePlayers(s);
-  if (action.type === "play" && pl.rack.length === 0 && s.bag.length === 0) {
+  if (played && mover !== null && s.players[mover]!.rack.length === 0 && s.bag.length === 0) {
     s.ended = "closed";
+    const closer = s.players[mover]!;
     for (const o of active) {
-      if (o === actor) continue;
+      if (o === mover) continue;
       const v = rackValue(s.players[o]!.rack);
       s.players[o]!.score -= v;
-      pl.score += v;
+      closer.score += v;
     }
   } else if (active.length < 2) {
     s.ended = "abandoned"; // sense ajustos d'atril: la partida no s'ha tancat (D-16)
