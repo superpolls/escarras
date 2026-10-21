@@ -25,6 +25,7 @@ let s = await state(page);
 const move = firstMove(s);
 if (!move) throw new Error("No he trobat cap primera jugada");
 
+const loupes: number[] = [];
 /** Arrossega una fitxa de l'atril a una casella, com ho faria un dit (la fitxa es veu 44 px per sobre del dit). */
 async function dragTo(slot: number, cell: number, shot?: string) {
   const from = (await page.locator(`.rack button[data-slot="${slot}"]`).boundingBox())!;
@@ -34,6 +35,7 @@ async function dragTo(slot: number, cell: number, shot?: string) {
   const tx = to.x + to.width / 2, ty = to.y + to.height / 2 + 44;
   for (let k = 1; k <= 8; k++) await page.mouse.move(from.x + (tx - from.x) * k / 8, from.y + (ty - from.y) * k / 8);
   if (shot) await page.screenshot({ path: shot });
+  loupes.push(await page.locator(".loupe .lc.target").count());
   await page.mouse.up();
 }
 
@@ -60,6 +62,7 @@ await dragTo(move.slots[0]!, move.cells[0]!, `${OUT}/4a-arrossegant.png`);
 console.log("Fitxes vermelles amb una sola fitxa:", await page.locator(".cell.pending.bad").count());
 // La resta, també arrossegant → la jugada és vàlida → verdes
 for (let k = 1; k < move.slots.length; k++) await dragTo(move.slots[k]!, move.cells[k]!);
+console.log("Lupa visible en arrossegar:", loupes.every(n => n === 1) ? "sí" : `no (${loupes.join(",")})`);
 console.log("Fitxes verdes amb la paraula completa:", await page.locator(".cell.pending.good").count(), "de", move.slots.length);
 // Moure una fitxa ja posada a un lloc dolent i tornar-la
 const firstCell = (await page.locator(`[data-i="${move.cells[0]}"]`).boundingBox())!;

@@ -151,3 +151,22 @@ canvas.qr { width: min(92vw, 460px); height: auto; image-rendering: pixelated; d
 .cell.pending.draft.good { background: #e4dcff; box-shadow: inset 0 0 0 3px var(--good); }
 .cell.pending.draft.bad { background: #e4dcff; box-shadow: inset 0 0 0 3px var(--bad); }
 .waiting { margin: 6px 8px 0; padding: 8px 10px; background: #f3f3f3; border-radius: 10px; font-size: 16px; }
+
+/* Lupa mentre s'arrossega una fitxa */
+.loupe {
+  position: fixed; z-index: 31; width: 160px; height: 160px; pointer-events: none;
+  display: grid; grid-template-columns: repeat(5, 1fr); gap: 1px; background: var(--line);
+  border: 3px solid var(--ink); border-radius: 14px; overflow: hidden; box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+}
+.loupe .lc { position: relative; background: var(--board); display: flex; align-items: center; justify-content: center; font-size: 17px; line-height: 1; }
+.loupe .lc.p-TW { background: var(--tw); }
+.loupe .lc.p-DW { background: var(--dw); }
+.loupe .lc.p-TL { background: var(--tl); }
+.loupe .lc.p-DL { background: var(--dl); }
+.loupe .lc.tile { background: var(--tile); }
+.loupe .lc.pending { background: var(--pending); }
+.loupe .lc.pending.draft { background: #e4dcff; }
+.loupe .lc.target { background: var(--pending); box-shadow: inset 0 0 0 3px var(--accent); }
+.loupe .lc.target.busy { box-shadow: inset 0 0 0 3px var(--bad); }
+.loupe .lc .prem { font-size: 11px; font-weight: 600; color: #333; }
+.loupe .lc .v { font-size: 9px; }

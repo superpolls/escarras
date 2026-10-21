@@ -3,7 +3,7 @@
  * Les fitxes es poden col·locar tocant (fitxa i després casella) o arrossegant (Pointer Events).
  */
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { CELLS, CENTER, PREMIUMS } from "../core/board";
+import { CELLS, CENTER, colOf, PREMIUMS, rowOf } from "../core/board";
 import {
   applyAction, checkPlay, EngineError, nextPlayer, proposalApprover, senyorsAtTurnStart, senyorsAvailable, swapSenyors, type IsWord,
 } from "../core/game";
@@ -134,6 +134,55 @@ export function Board({ state, pending, bad, good, dropCell, zoom, onCell, onPen
       </div>
     </div>
   );
+}
+
+/** Mida de la lupa (píxels) i caselles que hi caben per costat. */
+const LOUPE = 160;
+const LOUPE_CELLS = 5;
+
+/**
+ * Lupa mentre s'arrossega: les caselles del voltant, ampliades, amb la casella on cauria la fitxa marcada
+ * (en vermell si està ocupada). Es dibuixa per sobre del dit perquè el dit no la tapi.
+ */
+function Loupe({ state, pending, rack, target, tile, x, y, draft }: {
+  state: GameState;
+  pending: Pending[];
+  rack: number[];
+  target: number;
+  tile: { tile: number; letter: number };
+  x: number;
+  y: number;
+  draft: boolean;
+}) {
+  const half = Math.floor(LOUPE_CELLS / 2);
+  const r0 = Math.min(Math.max(rowOf(target) - half, 0), 15 - LOUPE_CELLS);
+  const c0 = Math.min(Math.max(colOf(target) - half, 0), 15 - LOUPE_CELLS);
+  const byCell = new Map(pending.map(p => [p.index, p]));
+  const left = Math.min(Math.max(x - LOUPE / 2, 4), window.innerWidth - LOUPE - 4);
+  const above = y - GHOST_LIFT - 40 - LOUPE;
+  const top = above >= 4 ? above : y + 30; // si no hi cap a sobre, a sota del dit
+  const cells = [];
+  for (let dr = 0; dr < LOUPE_CELLS; dr++) {
+    for (let dc = 0; dc < LOUPE_CELLS; dc++) {
+      const i = (r0 + dr) * 15 + c0 + dc;
+      const c = state.board[i];
+      const p = byCell.get(i);
+      const prem = PREMIUMS[i];
+      const isTarget = i === target;
+      const cls = ["lc", prem ? `p-${prem}` : "", c ? "tile" : "", p ? "tile pending" : "", p && draft ? "draft" : "",
+        isTarget ? (c || p ? "target busy" : "target") : ""].join(" ");
+      cells.push(
+        <div key={i} class={cls}>
+          {isTarget && !c && !p ? <TileFace tile={tile.tile} letter={tile.letter} />
+            : c ? <TileFace tile={c.tile} letter={c.letter} />
+            : p ? <TileFace tile={rack[p.slot]!} letter={p.letter} />
+            : i === CENTER ? <span class="star">★</span>
+            : prem ? <span class="prem">{PREMIUM_LABEL[prem]}</span> : null}
+        </div>,
+      );
+    }
+  }
+  return <div class="loupe" style={{ left: `${left}px`, top: `${top}px` }} aria-hidden="true">{cells}</div>;
 }
 
 export function Modal({ children }: { children: preact.ComponentChildren }) {
@@ -435,6 +484,10 @@ export function GameScreen({ state, isWord, onCommit, onMenu, approverHere, net,
         </div>
       )}
 
+      {drag && ghost && drag.over !== null && (
+        <Loupe state={state} pending={pending.filter(p => p.index !== dragCell)} rack={player.rack} target={drag.over}
+          tile={ghost} x={drag.x} y={drag.y} draft={draftMode} />
+      )}
       {drag && ghost && (
         <div class="rtile ghost" style={{ left: `${drag.x - 24}px`, top: `${drag.y - GHOST_LIFT - 26}px` }} aria-hidden="true">
           <TileFace tile={ghost.tile} letter={ghost.letter} />
