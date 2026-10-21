@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="ca">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Escarràs · Prova del QR</title>
+<style>
+  :root { --bg:#fff; --ink:#111; --quiet:#555; --line:#ccc; --ok:#0a7a2f; --ko:#b3261e; --accent:#1f4fd1; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:17px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  main { max-width:560px; margin:0 auto; padding:16px; }
+  h1 { font-size:22px; margin:8px 0 4px; }
+  p.sub { color:var(--quiet); margin:0 0 16px; }
+  .tabs { display:flex; gap:8px; margin-bottom:16px; }
+  .tabs button { flex:1; }
+  button { font:inherit; min-height:52px; padding:10px 14px; border:2px solid var(--ink); border-radius:10px; background:#fff; color:var(--ink); cursor:pointer; }
+  button.on { background:var(--ink); color:#fff; }
+  .sizes { display:grid; gap:8px; margin-bottom:12px; }
+  #qrbox { text-align:center; }
+  canvas#qr { width:100%; max-width:520px; height:auto; image-rendering:pixelated; background:#fff; }
+  .meta { color:var(--quiet); font-size:15px; text-align:center; margin:8px 0; }
+  video { width:100%; border-radius:10px; background:#000; }
+  .res { font-size:20px; font-weight:600; margin:12px 0; }
+  .res.ok { color:var(--ok); } .res.ko { color:var(--ko); }
+  select { font:inherit; min-height:48px; width:100%; margin:8px 0; padding:8px; border:2px solid var(--ink); border-radius:10px; background:#fff; color:var(--ink); }
+  table { width:100%; border-collapse:collapse; font-size:14px; margin-top:12px; }
+  th, td { border-bottom:1px solid var(--line); padding:6px 4px; text-align:left; }
+  .hidden { display:none; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Escarràs · Prova del QR</h1>
+  <p class="sub">Un mòbil mostra el codi; l'altre el llegeix. Anoteu on ho proveu.</p>
+
+  <div class="tabs">
+    <button id="tShow" class="on">Mostra el codi</button>
+    <button id="tScan">Llegeix el codi</button>
+  </div>
+
+  <section id="show">
+    <div class="sizes">
+      <button data-bytes="200">Petit · ~200 bytes</button>
+      <button data-bytes="270">Pitjor cas previst · ~270 bytes</button>
+      <button data-bytes="540">Doble · ~540 bytes</button>
+    </div>
+    <div id="qrbox" class="hidden">
+      <canvas id="qr"></canvas>
+      <div class="meta" id="qrmeta"></div>
+      <div class="meta">Apugeu la brillantor de la pantalla al màxim.</div>
+    </div>
+  </section>
+
+  <section id="scan" class="hidden">
+    <label for="place">On feu la prova?</label>
+    <select id="place">
+      <option>Interior, llum normal</option>
+      <option>Cotxe, de dia</option>
+      <option>Cotxe, de nit</option>
+      <option>Exterior, al sol</option>
+      <option>Exterior, a l'ombra</option>
+    </select>
+    <button id="start" style="width:100%">Obre la càmera</button>
+    <video id="video" playsinline muted class="hidden"></video>
+    <div id="result" class="res"></div>
+    <table>
+      <thead><tr><th>Lloc</th><th>Mida</th><th>Temps</th><th>Dades</th></tr></thead>
+      <tbody id="log"></tbody>
+    </table>
+    <button id="clear" style="width:100%;margin-top:12px">Esborra les proves</button>
+  </section>
+</main>
+
+<script src="vendor/qrcode.js"></script>
+<script src="vendor/jsQR.js"></script>
+<script>
+// --- Base45: alfabet que cap al mode alfanumèric dels QR (més compacte que el binari) ---
+const B45 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:";
+function b45enc(bytes) {
+  let out = "";
+  for (let i = 0; i < bytes.length; i += 2) {
+    if (i + 1 < bytes.length) {
+      let n = bytes[i] * 256 + bytes[i + 1];
+      out += B45[n % 45] + B45[Math.floor(n / 45) % 45] + B45[Math.floor(n / 2025)];
+    } else {
+      let n = bytes[i];
+      out += B45[n % 45] + B45[Math.floor(n / 45)];
+    }
+  }
+  return out;
+}
+function b45dec(str) {
+  const out = [];
+  for (let i = 0; i < str.length; i += 3) {
+    const c = B45.indexOf(str[i]), d = B45.indexOf(str[i + 1]);
+    if (c < 0 || d < 0) throw new Error("caràcter invàlid");
+    if (i + 2 < str.length) {
+      const e = B45.indexOf(str[i + 2]);
+      if (e < 0) throw new Error("caràcter invàlid");
+      const n = c + d * 45 + e * 2025;
+      if (n > 65535) throw new Error("valor fora de rang");
+      out.push(n >> 8, n & 255);
+    } else {
+      const n = c + d * 45;
+      if (n > 255) throw new Error("valor fora de rang");
+      out.push(n);
+    }
+  }
+  return new Uint8Array(out);
+}
+// --- Suma de control (FNV-1a de 32 bits): detecta si les dades han arribat alterades ---
+function fnv(bytes) {
+  let h = 0x811c9dc5;
+  for (const b of bytes) { h ^= b; h = Math.imul(h, 0x01000193) >>> 0; }
+  return h;
+}
+function makePayload(n) {
+  const data = new Uint8Array(n);
+  crypto.getRandomValues(data.subarray(0, n - 4));
+  const h = fnv(data.subarray(0, n - 4));
+  data[n - 4] = h >>> 24; data[n - 3] = (h >>> 16) & 255; data[n - 2] = (h >>> 8) & 255; data[n - 1] = h & 255;
+  return "ESC0:" + b45enc(data);
+}
+function checkPayload(text) {
+  if (!text.startsWith("ESC0:")) return { ok: false, why: "no és un codi de prova" };
+  try {
+    const d = b45dec(text.slice(5));
+    const h = fnv(d.subarray(0, d.length - 4));
+    const got = ((d[d.length - 4] << 24) | (d[d.length - 3] << 16) | (d[d.length - 2] << 8) | d[d.length - 1]) >>> 0;
+    return { ok: h === got, bytes: d.length, why: h === got ? "" : "suma de control incorrecta" };
+  } catch (e) { return { ok: false, why: e.message }; }
+}
+
+// --- Mostrar el QR ---
+const $ = id => document.getElementById(id);
+let wakeLock = null;
+async function keepAwake() {
+  try { if ("wakeLock" in navigator && !wakeLock) wakeLock = await navigator.wakeLock.request("screen"); } catch (e) {}
+}
+document.querySelectorAll("[data-bytes]").forEach(btn => btn.onclick = () => {
+  document.querySelectorAll("[data-bytes]").forEach(b => b.classList.remove("on"));
+  btn.classList.add("on");
+  const n = Number(btn.dataset.bytes);
+  const text = makePayload(n);
+  const qr = qrcode(0, "M");          // 0 = versió automàtica; M = ~15 % de correcció d'errors
+  qr.addData(text, "Alphanumeric");
+  qr.make();
+  const count = qr.getModuleCount();
+  const cell = 8, quiet = 4;           // zona blanca de 4 mòduls al voltant: obligatòria per llegir bé
+  const size = (count + quiet * 2) * cell;
+  const cv = $("qr"); cv.width = size; cv.height = size;
+  const ctx = cv.getContext("2d");
+  ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, size, size);
+  ctx.fillStyle = "#000";
+  for (let r = 0; r < count; r++) for (let c = 0; c < count; c++)
+    if (qr.isDark(r, c)) ctx.fillRect((c + quiet) * cell, (r + quiet) * cell, cell, cell);
+  $("qrmeta").textContent = `${n} bytes · ${text.length} caràcters · versió ${(count - 17) / 4} (${count}×${count} quadrets)`;
+  $("qrbox").classList.remove("hidden");
+  keepAwake();
+});
+
+// --- Llegir el QR amb la càmera ---
+let stream = null, scanning = false, t0 = 0, detector = null;
+const cvs = document.createElement("canvas"), cctx = cvs.getContext("2d", { willReadFrequently: true });
+async function startScan() {
+  $("result").textContent = ""; $("result").className = "res";
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+  } catch (e) { $("result").textContent = "No s'ha pogut obrir la càmera: " + e.message; $("result").className = "res ko"; return; }
+  const v = $("video"); v.srcObject = stream; v.classList.remove("hidden"); await v.play();
+  if ("BarcodeDetector" in window) {
+    try { if ((await BarcodeDetector.getSupportedFormats()).includes("qr_code")) detector = new BarcodeDetector({ formats: ["qr_code"] }); } catch (e) {}
+  }
+  scanning = true; t0 = performance.now(); loop();
+}
+function stopScan() {
+  scanning = false;
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  stream = null; $("video").classList.add("hidden");
+}
+async function loop() {
+  if (!scanning) return;
+  const v = $("video");
+  let text = null, method = "";
+  if (v.readyState >= 2) {
+    if (detector) {
+      try { const r = await detector.detect(v); if (r.length) { text = r[0].rawValue; method = "natiu"; } } catch (e) {}
+    }
+    if (!text) {
+      const scale = Math.min(1, 960 / Math.max(v.videoWidth, v.videoHeight));
+      cvs.width = Math.round(v.videoWidth * scale); cvs.height = Math.round(v.videoHeight * scale);
+      cctx.drawImage(v, 0, 0, cvs.width, cvs.height);
+      const img = cctx.getImageData(0, 0, cvs.width, cvs.height);
+      const r = jsQR(img.data, img.width, img.height, { inversionAttempts: "dontInvert" });
+      if (r) { text = r.data; method = "jsQR"; }
+    }
+  }
+  if (text) {
+    const ms = Math.round(performance.now() - t0);
+    const chk = checkPayload(text);
+    stopScan();
+    const res = $("result");
+    res.className = "res " + (chk.ok ? "ok" : "ko");
+    res.textContent = chk.ok ? `Llegit en ${(ms / 1000).toFixed(1)} s · ${chk.bytes} bytes · dades íntegres ✓` : `Llegit, però amb errors: ${chk.why}`;
+    addLog({ place: $("place").value, bytes: chk.bytes || "?", s: (ms / 1000).toFixed(1), ok: chk.ok, method });
+    return;
+  }
+  requestAnimationFrame(loop);
+}
+// --- Registre de proves (només en aquest mòbil) ---
+function readLog() { try { return JSON.parse(localStorage.getItem("escarras-m0") || "[]"); } catch (e) { return []; } }
+function writeLog(l) { try { localStorage.setItem("escarras-m0", JSON.stringify(l)); } catch (e) {} }
+function addLog(row) { const l = readLog(); l.unshift(row); writeLog(l); renderLog(); }
+function renderLog() {
+  $("log").innerHTML = "";
+  for (const r of readLog()) {
+    const tr = document.createElement("tr");
+    for (const v of [r.place, r.bytes + " B", r.s + " s", r.ok ? "✓ " + r.method : "✗"]) { const td = document.createElement("td"); td.textContent = v; tr.appendChild(td); }
+    $("log").appendChild(tr);
+  }
+}
+$("start").onclick = () => { stopScan(); startScan(); };
+$("clear").onclick = () => { writeLog([]); renderLog(); };
+$("tShow").onclick = () => { stopScan(); $("show").classList.remove("hidden"); $("scan").classList.add("hidden"); $("tShow").classList.add("on"); $("tScan").classList.remove("on"); };
+$("tScan").onclick = () => { $("scan").classList.remove("hidden"); $("show").classList.add("hidden"); $("tScan").classList.add("on"); $("tShow").classList.remove("on"); };
+renderLog();
+</script>
+</body>
+</html>
