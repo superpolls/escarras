@@ -15,9 +15,9 @@ import { APP_URL, SERVER } from "./config";
 import { Modal, TileFace } from "./game-screen";
 import { QrCode, Scanner, useWakeLock } from "./qr";
 import { askPersistence, deviceId, gameStore, pendingNames, setPendingName } from "./storage";
-import { controlCode, loadLexicon, newGameId, randomBytes, vibrate } from "./support";
+import { controlCode, loadLexicon, newGameId, randomBytes, vibrate, wordChecker } from "./support";
 import { canAddPlayer, Table, type QrRequest } from "./table";
-import { describeAction, errorText, netText } from "./text";
+import { describeAction, dictionaryText, errorText, netText } from "./text";
 import { Info, markWelcomeSeen, Welcome, welcomeSeen } from "./info";
 
 type Screen = "home" | "setup" | "mode" | "invite" | "draw" | "scan" | "join" | "who" | "ready" | "play" | "end" | "info";
@@ -42,7 +42,7 @@ export function App() {
 
   const load = () => {
     setLoadError(false);
-    loadLexicon().then(lex => setIsWord(() => (t: readonly number[]) => lex.has(t))).catch(() => setLoadError(true));
+    loadLexicon().then(lex => setIsWord(() => wordChecker(lex))).catch(() => setLoadError(true));
   };
   useEffect(() => { load(); void askPersistence(); }, []);
 
@@ -172,8 +172,8 @@ export function App() {
   if (screen === "info") return <Info onBack={() => setScreen("home")} />;
 
   if (screen === "setup") {
-    return <Setup initial={setupNames} onBack={() => setScreen("home")} onStart={names => {
-      const state = createGame({ gameId: newGameId(), seed: randomBytes(16), names });
+    return <Setup initial={setupNames} onBack={() => setScreen("home")} onStart={(names, softcatala) => {
+      const state = createGame({ gameId: newGameId(), seed: randomBytes(16), names, softcatala });
       openSession(newReplica(newGameKey(), state, [0]));
       setSetupNames(null);
       setScreen("mode");
@@ -263,8 +263,9 @@ export function App() {
 
 // ---------------------------------------------------------------- pantalles
 
-function Setup({ initial, onStart, onBack }: { initial: string[] | null; onStart: (names: string[]) => void; onBack: () => void }) {
+function Setup({ initial, onStart, onBack }: { initial: string[] | null; onStart: (names: string[], softcatala: boolean) => void; onBack: () => void }) {
   const [n, setN] = useState(Math.max(2, initial?.length ?? 2));
+  const [softcatala, setSoftcatala] = useState(false);
   const [names, setNames] = useState(() => defaultNames(4).map((d, i) => initial?.[i] ?? d));
   return (
     <main class="page">
@@ -279,7 +280,15 @@ function Setup({ initial, onStart, onBack }: { initial: string[] | null; onStart
           onFocus={e => (e.currentTarget as HTMLInputElement).select()}
           onInput={e => { const v = [...names]; v[i] = (e.currentTarget as HTMLInputElement).value; setNames(v); }} />
       ))}
-      <button class="primary big" onClick={() => onStart(names.slice(0, n).map((x, i) => x.trim() || `Jugador ${i + 1}`))}>Comença</button>
+      <p>Quines paraules valen?</p>
+      <div class="row choice">
+        <button class={!softcatala ? "primary" : ""} onClick={() => setSoftcatala(false)} aria-pressed={!softcatala}>Només oficials</button>
+        <button class={softcatala ? "primary" : ""} onClick={() => setSoftcatala(true)} aria-pressed={softcatala}>També Softcatalà</button>
+      </div>
+      <p class="sub">{softcatala
+        ? "Oficials (DISC) i també paraules no oficials del diccionari de Softcatalà, com «traçable». No es podrà canviar durant la partida."
+        : "Les del diccionari oficial de l'Scrabble en català (DISC). No es podrà canviar durant la partida."}</p>
+      <button class="primary big" onClick={() => onStart(names.slice(0, n).map((x, i) => x.trim() || `Jugador ${i + 1}`), softcatala)}>Comença</button>
       <button class="link" onClick={onBack}>Torna</button>
     </main>
   );
@@ -301,6 +310,7 @@ function Draw({ state, onGo }: { state: GameState; onGo: () => void }) {
         </div>
       ))}
       <p class="big-text">Comença <strong>{state.players[state.first]!.name}</strong>.</p>
+      <p class="sub">{dictionaryText(state)}</p>
       <button class="primary big" onClick={onGo}>Som-hi</button>
     </main>
   );

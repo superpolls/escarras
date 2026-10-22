@@ -8,5 +8,13 @@
   "descartades": 0,
   "arestes": 110869,
   "bytes": 443492,
-  "sha256": "c7f1a27a07b35622104c097df99f152c8a093a2a8592b95e43b26d17f7fb1121"
+  "sha256": "c7f1a27a07b35622104c097df99f152c8a093a2a8592b95e43b26d17f7fb1121",
+  "softcatala": {
+    "font": "Softcatalà catalan-dict-tools 1ed152056ff3 (LGPL-2.1)",
+    "fontSha256": "35f2facf11c4bb168c2c260bb3253259a33a9c9eba1335ab8cfa71ff4210a6da",
+    "paraulesNoves": 211589,
+    "arestes": 113302,
+    "bytes": 453224,
+    "sha256": "beb42b02b498ddd95b5f7c4688eb3e565853dfdf6337418deb4b8285473fc991"
+  }
 }

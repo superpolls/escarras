@@ -3,22 +3,39 @@ import { Lexicon } from "../core/lexicon";
 import { toHex } from "../core/sha256";
 import type { GameState } from "../core/types";
 
-let lexiconPromise: Promise<Lexicon> | null = null;
+export interface Lexicons {
+  /** DISC: el diccionari oficial. */
+  disc: Lexicon;
+  /** Paraules de Softcatalà que el DISC no té (D-37). */
+  softcatala: Lexicon;
+}
 
-/** Carrega el diccionari una sola vegada. */
-export function loadLexicon(): Promise<Lexicon> {
-  lexiconPromise ??= fetch(`${import.meta.env.BASE_URL}lexicon.bin`)
+let lexiconPromise: Promise<Lexicons> | null = null;
+
+const fetchLexicon = (file: string) =>
+  fetch(`${import.meta.env.BASE_URL}${file}`)
     .then(r => {
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       return r.arrayBuffer();
     })
-    .then(b => Lexicon.fromBytes(b))
+    .then(b => Lexicon.fromBytes(b));
+
+/**
+ * Carrega els dos diccionaris una sola vegada, en paral·lel.
+ * Es carreguen tots dos sempre: un mòbil ha de poder verificar qualsevol partida que li arribi, sense connexió.
+ */
+export function loadLexicon(): Promise<Lexicons> {
+  lexiconPromise ??= Promise.all([fetchLexicon("lexicon.bin"), fetchLexicon("lexicon-softcatala.bin")])
+    .then(([disc, softcatala]) => ({ disc, softcatala }))
     .catch(e => {
       lexiconPromise = null;
       throw e;
     });
   return lexiconPromise;
 }
+
+/** Validador de paraules per al motor: el DISC sempre; Softcatalà només si la partida ho diu. */
+export const wordChecker = (l: Lexicons) => (t: readonly number[], softcatala: boolean) => l.disc.has(t) || (softcatala && l.softcatala.has(t));
 
 /** Atzar real del sistema per a la llavor i l'identificador de partida. */
 export function randomBytes(n: number): Uint8Array {

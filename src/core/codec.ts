@@ -14,12 +14,17 @@
  *   proposta: hi ha(1) [+ jugador(3) + n-1(3) + col·locacions(14 c/u)]
  *   paraules aprovades: n(5) + per paraula: llargada(4) + fitxes(5 c/u)
  *   última acció: tipus(4); si n'hi ha: jugador(3) · punts(13) · senyors(2) · dades segons el tipus
+ *
+ * Format 2 = format 1 + diccionari(8) just després del número de format (0: DISC; 1: DISC + Softcatalà).
+ * Les partides només amb el DISC es continuen escrivint en format 1, byte a byte com abans:
+ * així no canvien les empremtes de les partides en curs i les versions antigues de l'app hi poden jugar (D-37).
  */
 import { CELLS } from "./board";
 import { fromHex, sha256, toHex } from "./sha256";
 import type { Action, Cell, GameState, LastAction, Player, PlayerStatus } from "./types";
 
-export const FORMAT = 1;
+export const FORMAT = 2;
+const DICTIONARIES = ["disc", "disc+softcatala"] as const;
 
 class BitWriter {
   private bytes: number[] = [];
@@ -73,7 +78,12 @@ const writePlacements = (w: BitWriter, ps: readonly { index: number; tile: numbe
 
 export function encodeState(s: GameState): Uint8Array {
   const w = new BitWriter();
-  w.write(FORMAT, 8);
+  if (s.softcatala) {
+    w.write(2, 8);
+    w.write(DICTIONARIES.indexOf("disc+softcatala"), 8);
+  } else {
+    w.write(1, 8);
+  }
   w.writeBytes(fromHex(s.gameId));
   for (const x of s.rng) w.write(x >>> 0, 32);
   w.write(s.seq, 24);
@@ -150,7 +160,15 @@ export function encodeState(s: GameState): Uint8Array {
 export function decodeState(bytes: Uint8Array): GameState {
   const r = new BitReader(bytes);
   const bad = (what: string): never => { throw new Error(`${what} no vàlid`); };
-  if (r.read(8) !== FORMAT) throw new Error("Format d'estat desconegut");
+  const format = r.read(8);
+  if (format !== 1 && format !== 2) throw new Error("Format d'estat desconegut");
+  let softcatala = false;
+  if (format === 2) {
+    const dict = DICTIONARIES[r.read(8)] ?? bad("Diccionari");
+    // El format 2 només s'escriu per a partides amb Softcatalà: així cada estat té una sola codificació.
+    if (dict !== "disc+softcatala") bad("Diccionari");
+    softcatala = true;
+  }
   const gameId = toHex(r.readBytes(16));
   const rng = [r.read(32), r.read(32), r.read(32), r.read(32)] as GameState["rng"];
   const seq = r.read(24);
@@ -254,7 +272,7 @@ export function decodeState(bytes: Uint8Array): GameState {
   }
   if (r.bitsLeft >= 8) throw new Error("Dades sobrants");
 
-  return { gameId, rng, seq, turn, first, initialCount, players, order, current, board, bag, scoreless, removal, proposal, approvedWords, last, startDraw, ended, prevHash };
+  return { gameId, rng, seq, turn, first, initialCount, players, order, current, board, bag, scoreless, removal, proposal, approvedWords, last, startDraw, ended, prevHash, softcatala };
 }
 
 /** Empremta d'un estat: els 8 primers bytes del SHA-256 de la seva forma canònica, en hexadecimal. */

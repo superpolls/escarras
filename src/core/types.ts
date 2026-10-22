@@ -104,4 +104,6 @@ export interface GameState {
   ended: EndReason | null;
   /** Empremta de l'estat anterior (16 caràcters hexadecimals); "" a l'estat inicial. */
   prevHash: string;
+  /** La partida accepta també les paraules no oficials de Softcatalà (D-37). Es tria en crear-la i no canvia. */
+  softcatala: boolean;
 }

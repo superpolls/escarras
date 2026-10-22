@@ -186,3 +186,15 @@ Es construeix en mig segon amb `npm run lexicon`. El script comprova primer l'em
 **Manifest.** Fitxer que diu al mòbil «aquesta web és una app»: nom, icona i que s'obri a pantalla completa. Sense manifest, a l'iPhone la icona només és un marcador de Safari i no evita l'esborrat dels 7 dies. Atenció: a l'iPhone l'app instal·lada i Safari guarden les dades per separat; cal instal·lar-la abans de començar la partida.
 
 **Llicència.** Un repositori públic sense llicència no dona cap permís ni exclou cap garantia. La GPL-3.0 diu que el programa es dona «tal com és» i limita la responsabilitat de l'autor en la mesura que ho permet la llei.
+
+## 12. Diccionari ampliat amb Softcatalà (D-37)
+
+**Problema.** El DISC segueix el DIEC2: si una paraula no hi és (*traçable*), en una partida oficial no val.
+
+**Solució.** Dos diccionaris: el DISC (sempre) i un segon fitxer només amb les paraules de Softcatalà que el DISC no té (211.589). Qui crea la partida tria si valen. La tria es desa dins la partida, perquè tots els mòbils validin igual.
+
+**Conceptes:**
+- **Diferència de conjunts.** El segon fitxer no repeteix res del DISC: és «Softcatalà menys DISC». Una paraula val si és al DISC, o si la partida ho permet i és al segon fitxer.
+- **Compatibilitat cap enrere.** Les partides només DISC es codifiquen exactament igual que abans (format 1), així les empremtes de les partides en curs no canvien. Les ampliades porten un byte més (format 2). Una versió antiga de l'app que en rep una demana actualitzar-se en lloc de validar malament.
+- **Per què es carreguen sempre tots dos.** Un mòbil sense connexió ha de poder comprovar qualsevol jugada que li arribi per QR. Si només carregués Softcatalà quan cal, podria rebutjar una jugada correcta.
+- **Font fixada.** Com amb el DISC, la font té una empremta (sha256): si algú canvia el fitxer, la construcció falla. Tots els mòbils fan servir exactament la mateixa llista.

@@ -9,7 +9,11 @@ import { rngFromSeed, shuffle, type RngState } from "./rng";
 import { BLANK, TILE_DISTRIBUTION, TILE_LABELS, TILE_VALUES, tilesToWord, VOWELS, wordToTiles } from "./tiles";
 import type { Action, Cell, GameState, Placement, Player } from "./types";
 
-export type IsWord = (tiles: readonly number[]) => boolean;
+/**
+ * Diu si una seqüència de fitxes és una paraula vàlida.
+ * `softcatala`: la partida també accepta les paraules de Softcatalà que el DISC no té (D-37).
+ */
+export type IsWord = (tiles: readonly number[], softcatala: boolean) => boolean;
 
 export type MoveError =
   | { code: "game-over" }
@@ -102,11 +106,13 @@ export interface NewGame {
   gameId: string; // 32 caràcters hexadecimals
   seed: Uint8Array; // 16 bytes d'atzar real
   names: string[]; // 2 a 4 noms
+  /** Acceptar també les paraules no oficials de Softcatalà (D-37). Per defecte, només el DISC. */
+  softcatala?: boolean;
 }
 
 const newPlayer = (name: string, score = 0): Player => ({ name: cleanName(name), score, rack: [], senyors: 0, status: "active", fresh: true });
 
-export function createGame({ gameId, seed, names }: NewGame): GameState {
+export function createGame({ gameId, seed, names, softcatala = false }: NewGame): GameState {
   if (!/^[0-9a-f]{32}$/.test(gameId)) throw new Error("Identificador de partida no vàlid");
   if (names.length < 2 || names.length > MAX_ACTIVE) throw new Error("Calen de 2 a 4 jugadors");
   const rng: RngState = rngFromSeed(seed);
@@ -128,7 +134,7 @@ export function createGame({ gameId, seed, names }: NewGame): GameState {
     order, current: draw0.first,
     board: new Array<Cell | null>(CELLS).fill(null),
     bag, scoreless: 0, removal: null, proposal: null, approvedWords: [], last: null,
-    startDraw: draw0.rounds, ended: null, prevHash: "",
+    startDraw: draw0.rounds, ended: null, prevHash: "", softcatala,
   };
   for (const p of order) draw(s, s.players[p]!.rack, RACK_SIZE); // (5) en ordre de joc
   return s;
@@ -246,7 +252,7 @@ export function checkPlay(state: GameState, placements: readonly Placement[], is
   });
   // Una paraula aprovada en aquesta partida val fins al final (D-21)
   const approved = (t: number[]) => state.approvedWords.some(w => w.length === t.length && w.every((x, k) => x === t[k]));
-  const invalid = words.filter(w => !isWord(w.letters) && !approved(w.letters));
+  const invalid = words.filter(w => !isWord(w.letters, state.softcatala) && !approved(w.letters));
   if (invalid.length) {
     // Caselles de les paraules no vàlides, per marcar-les a la pantalla
     const cells = [...new Set(invalid.flatMap(w => w.cells))].sort((a, b) => a - b);

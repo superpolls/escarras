@@ -63,3 +63,7 @@ export function netText(n: NetStatus, pending: boolean): string {
     case "offline": return "Sense connexió: fes servir el QR";
   }
 }
+
+/** Quines paraules valen en aquesta partida (D-37). */
+export const dictionaryText = (s: GameState) =>
+  s.softcatala ? "Paraules: oficials (DISC) i també les de Softcatalà." : "Paraules: només les oficials (DISC).";

@@ -14,7 +14,7 @@ import { Board, GameScreen, Modal, TileFace } from "./game-screen";
 import { Scorebar } from "./scorebar";
 import { pendingNames, setPendingName } from "./storage";
 import { controlCode, vibrate } from "./support";
-import { describeAction, errorText, netText, points } from "./text";
+import { describeAction, dictionaryText, errorText, netText, points } from "./text";
 
 export interface QrRequest { text: string; title: string; note?: string; allowUndo?: boolean }
 
@@ -169,6 +169,7 @@ export function Table({ session, isWord, onHome, onInvite, onScan, onQr }: {
       {menu === "main" && (
         <Modal>
           <h2>Menú</h2>
+          <p class="sub">{dictionaryText(h)}</p>
           <div class="col">
             <button onClick={() => { setMenu(null); onScan(); }}>Escaneja un codi</button>
             <button onClick={() => { setMenu(null); onQr({ text: packetToText(session.qrPacket()), title: "Codi de la partida", note: "Qui l'escanegi tindrà la partida al dia. Un mòbil nou hi podrà triar quin jugador és." }); }}>Mostra el codi de la partida</button>

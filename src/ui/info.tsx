@@ -96,6 +96,7 @@ export function Info({ onBack }: { onBack: () => void }) {
 
       <h2>Crèdits i llicència</h2>
       <p>Diccionari: <strong>DISC 2.18.25</strong> (Diccionari Informatitzat de l'Scrabble en Català), de Joan Montané, amb llicència GPLv3 / CC-BY-SA 3.0. <a href="https://diccionari.totescrable.cat/" target="_blank" rel="noopener noreferrer">diccionari.totescrable.cat</a></p>
+      <p>Paraules no oficials (opcional en crear la partida): diccionari de <strong>Softcatalà</strong> (catalan-dict-tools), amb llicència LGPL-2.1. <a href="https://github.com/Softcatala/catalan-dict-tools" target="_blank" rel="noopener noreferrer">github.com/Softcatala/catalan-dict-tools</a></p>
       <p>Reglament: AJUSC i FISC. Codi amb llicència GPL-3.0: <a href="https://github.com/superpolls/escarras" target="_blank" rel="noopener noreferrer">github.com/superpolls/escarras</a></p>
       <p class="sub">Versió {VERSION}{BUILD_DATE && ` · ${BUILD_DATE}`}</p>
 
