@@ -18,8 +18,9 @@ import { askPersistence, deviceId, gameStore, pendingNames, setPendingName } fro
 import { controlCode, loadLexicon, newGameId, randomBytes, vibrate } from "./support";
 import { canAddPlayer, Table, type QrRequest } from "./table";
 import { describeAction, errorText, netText } from "./text";
+import { Info, markWelcomeSeen, Welcome, welcomeSeen } from "./info";
 
-type Screen = "home" | "setup" | "mode" | "invite" | "draw" | "scan" | "join" | "who" | "ready" | "play" | "end" | "credits";
+type Screen = "home" | "setup" | "mode" | "invite" | "draw" | "scan" | "join" | "who" | "ready" | "play" | "end" | "info";
 type Confirm = { title: string; text: string; yes: string; run: () => void };
 
 const defaultNames = (n: number) => Array.from({ length: n }, (_, i) => `Jugador ${i + 1}`);
@@ -35,6 +36,7 @@ export function App() {
   const [joinKey, setJoinKey] = useState<Uint8Array | null>(null);
   const [whoFromQr, setWhoFromQr] = useState(false);
   const [confirm, setConfirm] = useState<Confirm | null>(null);
+  const [welcomeOk, setWelcomeOk] = useState(welcomeSeen);
   const [, bump] = useReducer((x: number) => x + 1, 0);
   const force = () => bump(undefined);
 
@@ -93,6 +95,9 @@ export function App() {
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [session]);
+
+  // Primer arranc: avís i instal·lació. L'enllaç d'invitació es conserva i continua després (D-33)
+  if (!welcomeOk) return <Welcome onOk={() => { markWelcomeSeen(); setWelcomeOk(true); }} />;
 
   if (loadError) {
     return (
@@ -164,17 +169,7 @@ export function App() {
     return null;
   };
 
-  if (screen === "credits") {
-    return (
-      <main class="page">
-        <h1>Crèdits</h1>
-        <p>Diccionari: <strong>DISC 2.18.25</strong> (Diccionari Informatitzat de l'Scrabble en Català), de Joan Montané, amb llicència GPLv3 / CC-BY-SA 3.0. <a href="https://diccionari.totescrable.cat/" target="_blank" rel="noopener">diccionari.totescrable.cat</a></p>
-        <p>Reglament: AJUSC i FISC. Escarràs és un joc familiar sense ànim de lucre.</p>
-        <p class="sub">La partida en línia passa per un servidor que només veu dades xifrades amb la clau de l'enllaç.</p>
-        <button onClick={() => setScreen("home")}>Torna</button>
-      </main>
-    );
-  }
+  if (screen === "info") return <Info onBack={() => setScreen("home")} />;
 
   if (screen === "setup") {
     return <Setup initial={setupNames} onBack={() => setScreen("home")} onStart={names => {
@@ -218,7 +213,7 @@ export function App() {
           ? setConfirm({ title: "Començar una partida nova?", text: "La partida d'aquest mòbil es deixarà.", yes: "Sí, nova partida", run: () => { closeGame(); setScreen("setup"); } })
           : setScreen("setup"))}>Nova partida</button>
         <button class="big" onClick={() => setScreen("scan")}>Uneix-me a una partida</button>
-        <button class="link" onClick={() => setScreen("credits")}>Crèdits</button>
+        <button class="link" onClick={() => setScreen("info")}>Informació i avís</button>
         {confirmModal}
       </main>
     );

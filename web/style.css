@@ -44,6 +44,16 @@ input { width: 100%; min-height: 48px; padding: 8px 12px; margin: 4px 0; border:
 .big-text { font-size: 22px; }
 .handoff { text-align: center; padding-top: 14vh; }
 .handoff .who { font-size: 40px; }
+/* Benvinguda i informació (D-33) */
+.welcome { padding-top: 8vh; }
+.welcome h1 { font-size: 36px; }
+.beta { font-size: 14px; font-weight: 700; vertical-align: middle; border: 2px solid var(--ink); border-radius: 6px; padding: 1px 6px; text-transform: uppercase; letter-spacing: 0.05em; }
+.install { border: 2px solid var(--line); border-radius: 10px; padding: 4px 14px 2px; margin: 16px 0; }
+.install ol { margin: 6px 0; padding-left: 22px; }
+.install li { margin: 4px 0; }
+.small { font-size: 14px; text-align: center; }
+.info p { margin: 6px 0 10px; }
+.info a { color: var(--accent); }
 .last-move { background: #f3f3f3; border-radius: 10px; padding: 12px; font-size: 18px; }
 
 /* Marcador */

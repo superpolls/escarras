@@ -7,7 +7,7 @@ const page = await (await browser.newContext({ viewport: { width: 390, height: 8
 const errors: string[] = [];
 page.on("pageerror", e => errors.push(e.message));
 await page.goto("http://localhost:4173/escarras/app/");
-await page.evaluate(() => localStorage.clear());
+await page.evaluate(() => { localStorage.clear(); localStorage.setItem("escarras-avis-v1", "1"); }); // avís ja acceptat
 await page.reload();
 await page.getByRole("button", { name: "Nova partida" }).click();
 await page.getByRole("button", { name: "Comença" }).click();

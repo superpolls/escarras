@@ -3,10 +3,13 @@
  * (firebase/database.rules.json) i el xifratge amb la clau de l'enllaç.
  * Per a les proves es pot compilar amb VITE_RTDB_URL=<altra adreça> o VITE_RTDB_URL=none (només QR).
  */
-const FIREBASE = "https://escarras-5668f-default-rtdb.europe-west1.firebasedatabase.app";
-const fromEnv = import.meta.env.VITE_RTDB_URL as string | undefined;
+import { serverFrom } from "../server";
 
-export const SERVER: string | null = fromEnv === "none" ? null : fromEnv || FIREBASE;
+export const SERVER: string | null = serverFrom(import.meta.env.VITE_RTDB_URL as string | undefined);
 
 /** Adreça pública de l'app, per als enllaços d'invitació. */
 export const APP_URL = new URL(import.meta.env.BASE_URL, location.origin).href;
+
+/** Versió i data de compilació (les posa vite.config.ts). */
+export const VERSION: string = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "dev";
+export const BUILD_DATE: string = typeof __BUILD_DATE__ === "string" ? __BUILD_DATE__ : "";

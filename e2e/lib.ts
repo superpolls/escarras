@@ -22,6 +22,8 @@ export const denied = { count: 0 };
 
 export async function phone(browser: Browser, errors: string[], label = ""): Promise<{ ctx: BrowserContext; page: Page }> {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
+  // L'avís del primer arranc ja acceptat (es prova a part, a e2e/welcome.ts)
+  if (!process.env.E2E_WELCOME) await ctx.addInitScript(() => localStorage.setItem("escarras-avis-v1", "1"));
   const page = await ctx.newPage();
   page.on("pageerror", e => errors.push(`${label} ${e.message}`));
   page.on("console", m => {

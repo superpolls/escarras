@@ -174,3 +174,15 @@ Es construeix en mig segon amb `npm run lexicon`. El script comprova primer l'em
 **Lliçó 7 · una acció, una versió.** Proposar i acceptar en el mateix mòbil feia dues accions d'un sol cop, i la rèplica ho rebutjava perquè la versió saltava de dos en dos. Cada acció ha de ser una versió pròpia: així qualsevol mòbil la pot verificar repetint-la.
 
 **Jugada de prova (estat de pantalla que sobreviu).** Mentre un altre juga, pots posar fitxes de prova. No formen part de la partida: són «estat de pantalla» desat només al teu mòbil, per fitxes (no per posicions de l'atril). Quan arriba una versió nova, l'app torna a situar la prova sobre el tauler nou i treu només les fitxes que queden sota una lletra nova. Com que la prova es desa a cada moviment, tampoc es perd si recarregues la pàgina.
+
+## 11. Seguretat i avís beta
+
+**El risc real d'una web app.** El navegador aïlla l'app: no pot llegir fotos, contactes ni altres apps. El dany més probable d'una versió alterada és una pantalla falsa que demani contrasenyes o pagaments. Per això la benvinguda diu que Escarràs mai en demana: un usuari avisat no hi cau.
+
+**Qui controla la web controla l'app.** Una PWA torna a demanar el codi a la seva adreça. Qui pugui publicar al repositori pot canviar l'app de tothom. La defensa principal no és tècnica dins l'app, sinó protegir el compte de GitHub (2FA amb passkey) i el compte de Google de Firebase.
+
+**CSP (Content Security Policy).** Una regla dins l'HTML que diu al navegador d'on pot carregar codi i amb qui pot parlar l'app. Si s'hi colés codi aliè, no podria enviar dades a cap altre servidor. Es genera en compilar (`vite.config.ts`) a partir de `VITE_RTDB_URL`, així les proves amb el servidor fals continuen funcionant.
+
+**Manifest.** Fitxer que diu al mòbil «aquesta web és una app»: nom, icona i que s'obri a pantalla completa. Sense manifest, a l'iPhone la icona només és un marcador de Safari i no evita l'esborrat dels 7 dies. Atenció: a l'iPhone l'app instal·lada i Safari guarden les dades per separat; cal instal·lar-la abans de començar la partida.
+
+**Llicència.** Un repositori públic sense llicència no dona cap permís ni exclou cap garantia. La GPL-3.0 diu que el programa es dona «tal com és» i limita la responsabilitat de l'autor en la mesura que ho permet la llei.
