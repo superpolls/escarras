@@ -325,9 +325,9 @@ function QrScreen({ q, session, onClose }: { q: QrRequest; session: Session | nu
       <QrCode text={q.text} />
       {q.note && <p>{q.note}</p>}
       <p class="sub">Puja la brillantor de la pantalla.{h ? ` Versió ${h.seq} · codi ${controlCode(h)}.` : ""}</p>
-      <button class="primary big" onClick={onClose}>Fet</button>
+      <button class="primary big" onClick={onClose}>{q.done ?? "Fet"}</button>
       {q.allowUndo && session?.canUndo() && (
-        <button class="link" onClick={() => { session.undo(); onClose(); }}>M'he equivocat, desfés la jugada (només si encara no l'ha escanejat ningú)</button>
+        <button class="link" onClick={() => { session.undo(); onClose(); }}>Encara no l'ha escanejat i m'he equivocat: desfés la jugada</button>
       )}
     </main>
   );
@@ -417,7 +417,7 @@ function Who({ session, fromQr, onDone, onHome }: { session: Session; fromQr: bo
   const pick = async (p: number) => {
     if (fromQr || !SERVER) { session.takeSeats([p]); return; } // qui mostra el QR ho consent
     const r = await session.requestSeat(p);
-    if (r === "offline") setMsg("Sense connexió. Demana a un altre jugador que t'ensenyi el codi de la partida.");
+    if (r === "offline") setMsg("Sense connexió. Demana a un altre jugador que t'ensenyi el QR de la partida (menú).");
   };
   const waiting = session.wantSeat;
   return (
@@ -500,7 +500,7 @@ function Invite({ session, isWord, onQr, onDone }: { session: Session; isWord: I
               : session.seats[i] ? <span class="ok">té mòbil ✓</span>
               : (
                 <span class="row">
-                  <button onClick={() => onQr({ text: packetToText(session.qrPacket(i)), title: `Invitació per a ${p.name}`, note: `Escaneja'l amb el mòbil de ${p.name}, des de «Uneix-me a una partida».` })}>QR</button>
+                  <button onClick={() => onQr({ text: packetToText(session.qrPacket(i)), title: `Invitació per a ${p.name}`, note: `Escaneja'l amb el mòbil de ${p.name}, des de «Uneix-me a una partida».`, done: `${p.name} ja l'ha escanejat` })}>QR</button>
                   <button onClick={() => session.takeSeats([i])}>Amb aquest mòbil</button>
                 </span>
               )}

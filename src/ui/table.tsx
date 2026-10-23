@@ -16,7 +16,8 @@ import { pendingNames, setPendingName } from "./storage";
 import { controlCode, vibrate } from "./support";
 import { describeAction, dictionaryText, errorText, netText, points } from "./text";
 
-export interface QrRequest { text: string; title: string; note?: string; allowUndo?: boolean }
+/** done: text del botó per tornar al joc. Quan es passa el torn, diu que l'altre ja l'ha escanejat (D-39). */
+export interface QrRequest { text: string; title: string; note?: string; allowUndo?: boolean; done?: string }
 
 const wordsOf = (s: GameState, placements: readonly Placement[], isWord: IsWord, onlyUnknown: boolean) => {
   const c = checkPlay(s, placements, onlyUnknown ? isWord : () => true);
@@ -95,6 +96,7 @@ export function Table({ session, isWord, onHome, onInvite, onScan, onQr }: {
         title: `Passa-ho a: ${n.players[target]?.name ?? ""}`,
         note: n.proposal ? "Que escanegi aquest codi per acceptar o no la paraula." : "Que escanegi aquest codi i li tocarà.",
         allowUndo: true,
+        done: `${n.players[target]?.name ?? ""} ja l'ha escanejat`,
       });
     }
   };
@@ -130,7 +132,7 @@ export function Table({ session, isWord, onHome, onInvite, onScan, onQr }: {
       {session.pending && (session.net === "pending" || session.net === "offline") && h.last && session.holds(h.last.player) && !session.holds(h.current) && (
         <div class="banner">
           <span>No s'ha pogut enviar. Ensenya el QR a {name(h.proposal ? approver ?? h.current : h.current)}.</span>
-          <button onClick={() => onQr({ text: packetToText(session.qrPacket()), title: `Passa-ho a: ${name(h.proposal ? approver ?? h.current : h.current)}`, allowUndo: true })}>Mostra el QR</button>
+          <button onClick={() => onQr({ text: packetToText(session.qrPacket()), title: `Passa-ho a: ${name(h.proposal ? approver ?? h.current : h.current)}`, allowUndo: true, done: `${name(h.proposal ? approver ?? h.current : h.current)} ja l'ha escanejat` })}>Mostra el QR</button>
         </div>
       )}
       {h.proposal && proposerMine && !approverMine && (
@@ -172,7 +174,7 @@ export function Table({ session, isWord, onHome, onInvite, onScan, onQr }: {
           <p class="sub">{dictionaryText(h)}</p>
           <div class="col">
             <button onClick={() => { setMenu(null); onScan(); }}>Escaneja un codi</button>
-            <button onClick={() => { setMenu(null); onQr({ text: packetToText(session.qrPacket()), title: "Codi de la partida", note: "Qui l'escanegi tindrà la partida al dia. Un mòbil nou hi podrà triar quin jugador és." }); }}>Mostra el codi de la partida</button>
+            <button onClick={() => { setMenu(null); onQr({ text: packetToText(session.qrPacket()), title: "QR de la partida", note: "Qui l'escanegi es posarà al dia, si aquest mòbil va més avançat. Un mòbil nou hi podrà triar quin jugador és.", done: "Tanca" }); }}>Torna a mostrar el QR (posar al dia un mòbil)</button>
             <button onClick={() => { setMenu(null); onInvite(); }}>Convida o afegeix jugadors</button>
             {seats.some(p => h.players[p]?.status === "active") && <button onClick={() => setMenu("rename")}>Canvia el meu nom</button>}
             {!removal && activePlayers(h).length > 2 && seats.some(p => h.players[p]?.status === "active") && <button onClick={() => setMenu("remove")}>Treu un jugador absent</button>}
@@ -268,7 +270,7 @@ export function Table({ session, isWord, onHome, onInvite, onScan, onQr }: {
     : `Torn: ${name(h.current)}.${offline ? "" : " La jugada t'arribarà sola."}`;
   // Amb connexió la jugada arriba sola: els botons de QR només surten sense connexió (al menú hi són sempre)
   const scanBtn = offline ? <button class="primary" onClick={onScan}>Sense connexió: escaneja el QR quan et toqui</button> : null;
-  const showBtn = offline ? <button onClick={() => onQr({ text: packetToText(session.qrPacket()), title: `Ensenya-ho a ${name(h.current)}`, note: "Així tindrà la partida al dia." })}>Mostra el meu QR</button> : null;
+  const showBtn = offline ? <button onClick={() => onQr({ text: packetToText(session.qrPacket()), title: `Ensenya-ho a ${name(h.current)}`, note: "Així tindrà la partida al dia.", done: "Tanca" })}>Torna a mostrar el meu QR</button> : null;
   const undoBtn = session.canUndo() && h.last ? <button onClick={() => { session.undo(); after(); }}>Desfés</button> : null;
 
   // Un sol jugador en aquest mòbil: mentre espera, pot ordenar l'atril i provar jugades (no compten)

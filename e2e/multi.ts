@@ -119,7 +119,7 @@ for (let k = 0; k < 2; k++) {
   await qr.waitFor({ timeout: 8000 });
   if (k === 0) await p.screenshot({ path: `${OUT}/m4-qr.png` });
   const code = (await qr.getAttribute("data-code"))!;
-  await p.getByRole("button", { name: "Fet" }).click();
+  await p.getByRole("button", { name: /ja l'ha escanejat$/ }).click();
   const r = other(p);
   await r.getByRole("button", { name: /escaneja el QR quan et toqui/ }).click();
   await r.getByLabel("Enllaç o codi").fill(code);
