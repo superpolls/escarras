@@ -61,13 +61,15 @@ export function Table({ session, isWord, onHome, onInvite, onScan, onQr, handoff
   const seats = session.seatsHere;
   const multi = seats.length > 1;
   const [viewer, setViewer] = useState<number | null>(null);
+  /** Diversos jugadors en aquest mòbil i no els toca: qui mira les seves fitxes per provar jugades (D-42). */
+  const [peek, setPeek] = useState<number | null>(null);
   const [menu, setMenu] = useState<null | "main" | "rename" | "remove" | "leave">(null);
   const [zoom, setZoom] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
   const name = (p: number) => h.players[p]?.name ?? "";
   const net = netText(session.net, session.pending);
 
-  useEffect(() => { setFlash(null); }, [h.seq]);
+  useEffect(() => { setFlash(null); setPeek(null); }, [h.seq]); // cada jugada nova amaga les fitxes
 
   const approver = h.proposal ? proposalApprover(h) : null;
   const approverMine = approver !== null && session.holds(approver);
@@ -301,6 +303,20 @@ export function Table({ session, isWord, onHome, onInvite, onScan, onQr, handoff
     );
   }
 
+  // Diversos jugadors en aquest mòbil: cadascú pot mirar les seves fitxes i provar jugades, d'un en un (D-42)
+  const peekers = multi && !h.ended ? seats.filter(p => h.players[p]?.status === "active" && !(h.proposal && h.proposal.player === p)) : [];
+  if (peek !== null && peekers.includes(peek)) {
+    return (
+      <>
+        <GameScreen key={peek} state={h} isWord={isWord} onCommit={commit} onMenu={() => setMenu("main")} approverHere={false} net={net}
+          me={peek} mode="draft" waitText={`Fitxes de ${name(peek)}${waiting ? ` · ${waiting}` : ""}`}
+          banners={<><LastMove session={session} />{banners}</>}
+          waitActions={<>{scanBtn}{showBtn}{undoBtn}<button onClick={() => setPeek(null)}>Amaga les fitxes</button></>} />
+        {overlays}
+      </>
+    );
+  }
+
   return (
     <div class="game">
       <Scorebar state={h} code={controlCode(h)} onMenu={() => setMenu("main")} net={net} />
@@ -313,6 +329,7 @@ export function Table({ session, isWord, onHome, onInvite, onScan, onQr, handoff
       <div class="actions">
         {scanBtn}
         {showBtn}
+        {peekers.map(p => <button key={`peek${p}`} onClick={() => setPeek(p)}>Fitxes de {name(p)}</button>)}
         <button onClick={() => setZoom(!zoom)} aria-pressed={zoom}>{zoom ? "Redueix" : "Amplia"}</button>
         {undoBtn}
       </div>

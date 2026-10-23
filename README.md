@@ -22,7 +22,7 @@ npm run build       # genera app/ (es publica amb GitHub Pages)
 # Proves al navegador (mòbils simulats) contra un servidor fals de Firebase
 npx tsx tests/fake-rtdb.ts 9400 &
 VITE_RTDB_URL=http://127.0.0.1:9400 npm run build && npx vite preview --port 4173 &
-npx tsx e2e/m3.ts && npx tsx e2e/approve.ts && npx tsx e2e/multi.ts && npx tsx e2e/softcatala.ts && npx tsx e2e/ghost.ts
+npx tsx e2e/m3.ts && npx tsx e2e/approve.ts && npx tsx e2e/multi.ts && npx tsx e2e/softcatala.ts && npx tsx e2e/ghost.ts && npx tsx e2e/peek.ts
 E2E_WELCOME=1 npx tsx e2e/welcome.ts
 npm run build       # torna a compilar amb el Firebase de debò abans de publicar
 ```
