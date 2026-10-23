@@ -228,10 +228,14 @@ export function GameScreen({ state, isWord, onCommit, onMenu, approverHere, net,
   const latest = useRef({ pending, state, player, order, turnKey, me });
   latest.current = { pending, state, player, order, turnKey, me };
   const suppressClick = useRef(false);
+  // «Juga» només val si el dit ha baixat sobre el botó després de l'últim canvi al tauler (D-41)
+  const lastChange = useRef(0);
+  const pressedAt = useRef<number | null>(null);
 
   /** Canvia les fitxes posades i les desa com a prova (sobreviuen a recarregar i al canvi de torn). */
   const setPending = (p: Pending[]) => {
     const { turnKey: key, state: st, player: pl, me: who } = latest.current;
+    lastChange.current = performance.now();
     setHeld({ key, pending: p });
     saveDraft(st.gameId, who, p.map(x => ({ index: x.index, tile: pl.rack[x.slot]!, letter: x.letter })));
   };
@@ -348,6 +352,7 @@ export function GameScreen({ state, isWord, onCommit, onMenu, approverHere, net,
       window.removeEventListener("pointerup", end);
       window.removeEventListener("pointercancel", end);
       if (!dragging) return; // era un toc: el gestiona onClick
+      lastChange.current = performance.now();
       suppressClick.current = true;
       setTimeout(() => { suppressClick.current = false; }, 350);
       setDrag(null);
@@ -369,6 +374,17 @@ export function GameScreen({ state, isWord, onCommit, onMenu, approverHere, net,
     window.addEventListener("pointermove", move, { passive: false });
     window.addEventListener("pointerup", end);
     window.addEventListener("pointercancel", end);
+  };
+
+  /**
+   * Un clic a «Juga» que no ve d'un toc sobre el botó (clic fantasma després d'arrossegar, o el botó que es mou
+   * sota el dit en canviar la pantalla) no juga. Amb el teclat (detail 0) sí que val.
+   */
+  const playClick = (e: MouseEvent) => {
+    const at = pressedAt.current;
+    pressedAt.current = null;
+    if (e.detail !== 0 && (at === null || at < lastChange.current)) return;
+    play();
   };
 
   const play = () => {
@@ -475,7 +491,7 @@ export function GameScreen({ state, isWord, onCommit, onMenu, approverHere, net,
         </div>
       ) : (
         <div class="actions">
-          <button class="primary" disabled={!check?.ok} onClick={play}>Juga</button>
+          <button class="primary" disabled={!check?.ok} onPointerDown={() => { pressedAt.current = performance.now(); }} onClick={playClick}>Juga</button>
           <button onClick={() => { setPending([]); setSelected(null); }} disabled={!pending.length}>Recull</button>
           <button onClick={shuffleRack}>Barreja</button>
           <button onClick={() => { setPending([]); setSelected(null); setExchange(new Set()); }} disabled={state.bag.length < 7}>Canvia</button>
