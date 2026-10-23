@@ -210,3 +210,17 @@ Es construeix en mig segon amb `npm run lexicon`. El script comprova primer l'em
 **Càrrega a part = dependència de la xarxa.** Sense *service worker*, un fitxer que es carrega només quan cal no es pot carregar sense connexió. El lector de QR és justament el que es fa servir sense connexió: ara va dins l'app.
 
 **Prova automàtica.** Chromium amb una càmera falsa que mostra un QR real del joc: amb el codi d'abans i un lector natiu que falla no es llegia; amb el codi nou, sí.
+
+## 14. Sense connexió de debò (D-44)
+
+**Símptoma.** En mode avió, lliscar avall va recarregar l'app i va sortir la pantalla d'error de Chrome (el dinosaure). La partida no es va perdre (és a l'emmagatzematge del mòbil), però l'app no es podia obrir.
+
+**Instal·lar no és tenir còpia.** La icona a la pantalla d'inici només és un accés directe a l'adreça. Sense *service worker*, cada vegada que s'obre es baixa de la xarxa.
+
+**Service worker.** Petit programa que el navegador guarda amb la web i que s'interposa entre l'app i la xarxa. En instal·lar-se, guarda una còpia de tots els fitxers. Cada versió té un nom de còpia diferent: quan n'arriba una de nova, es guarda la nova i s'esborra la vella.
+
+**Estratègies.** Per obrir l'app, primer la xarxa (així arriben les versions noves) i, si no n'hi ha en 4 segons, la còpia. Per a la resta de fitxers, primer la còpia: són fitxers que no canvien mai, perquè el nom porta una empremta del contingut.
+
+**Detall que ha fallat a la primera prova: «Vary».** El servidor pot dir que la resposta depèn d'una capçalera de la petició (per exemple, *Origin*). L'script de l'app es demana amb aquesta capçalera i la còpia es va guardar sense, així que no es trobava. Solució: buscar a la còpia sense mirar «Vary».
+
+**Important:** la còpia es fa la primera vegada que s'obre la versió 0.4.0 **amb connexió**. A partir de llavors, ja es pot obrir sense.

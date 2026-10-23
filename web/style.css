@@ -19,6 +19,8 @@
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; background: var(--bg); color: var(--ink); }
+/* Lliscar avall no recarrega la pàgina: sense connexió, recarregar podia deixar l'app en blanc (D-44) */
+html, body { overscroll-behavior-y: none; }
 body { font: 17px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
 button, input { font: inherit; color: var(--ink); }
 button {
@@ -35,6 +37,7 @@ input { width: 100%; min-height: 48px; padding: 8px 12px; margin: 4px 0; border:
 .page h1 { font-size: 28px; margin: 8px 0 12px; }
 .page h2 { font-size: 18px; margin: 16px 0 6px; }
 .sub { color: var(--quiet); }
+.ok-line { color: var(--good); text-align: center; }
 .home { text-align: center; padding-top: 18vh; }
 .home h1 { font-size: 40px; margin-bottom: 0; }
 .row { display: flex; gap: 8px; flex-wrap: wrap; }

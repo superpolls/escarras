@@ -26,6 +26,19 @@ type Confirm = { title: string; text: string; yes: string; run: () => void };
 const defaultNames = (n: number) => Array.from({ length: n }, (_, i) => `Jugador ${i + 1}`);
 const DEVICE = deviceId();
 
+/** L'app té una còpia guardada (service worker actiu): es pot obrir sense connexió (D-44). */
+function useOfflineReady(): boolean {
+  const sw = typeof navigator !== "undefined" ? navigator.serviceWorker : undefined;
+  const [ready, setReady] = useState(!!sw?.controller);
+  useEffect(() => {
+    if (!sw) return;
+    const on = () => setReady(!!sw.controller);
+    sw.addEventListener("controllerchange", on);
+    return () => sw.removeEventListener("controllerchange", on);
+  }, []);
+  return ready;
+}
+
 export function App() {
   const [isWord, setIsWord] = useState<IsWord | null>(null);
   const [loadError, setLoadError] = useState(false);
@@ -39,6 +52,7 @@ export function App() {
   const [whoFromQr, setWhoFromQr] = useState(false);
   const [confirm, setConfirm] = useState<Confirm | null>(null);
   const [welcomeOk, setWelcomeOk] = useState(welcomeSeen);
+  const offlineReady = useOfflineReady();
   const [, bump] = useReducer((x: number) => x + 1, 0);
   const force = () => bump(undefined);
 
@@ -222,6 +236,7 @@ export function App() {
           : setScreen("setup"))}>Nova partida</button>
         <button class="big" onClick={() => setScreen("scan")}>Uneix-me a una partida</button>
         <button class="link" onClick={() => setScreen("info")}>Informació i avís</button>
+        {offlineReady && <p class="sub ok-line">Llesta per jugar sense connexió ✓</p>}
         {confirmModal}
       </main>
     );
