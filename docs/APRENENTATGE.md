@@ -198,3 +198,15 @@ Es construeix en mig segon amb `npm run lexicon`. El script comprova primer l'em
 - **Compatibilitat cap enrere.** Les partides només DISC es codifiquen exactament igual que abans (format 1), així les empremtes de les partides en curs no canvien. Les ampliades porten un byte més (format 2). Una versió antiga de l'app que en rep una demana actualitzar-se en lloc de validar malament.
 - **Per què es carreguen sempre tots dos.** Un mòbil sense connexió ha de poder comprovar qualsevol jugada que li arribi per QR. Si només carregués Softcatalà quan cal, podria rebutjar una jugada correcta.
 - **Font fixada.** Com amb el DISC, la font té una empremta (sha256): si algú canvia el fitxer, la construcció falla. Tots els mòbils fan servir exactament la mateixa llista.
+
+## 13. El QR no es llegia a l'iPhone (D-38)
+
+**Símptoma.** A M0 els dos mòbils llegien el QR; a l'app, l'iPhone no.
+
+**Lliçó: una prova només val per al codi que prova.** L'app havia de fer el mateix que M0, però no ho feia exactament: M0 provava jsQR sempre que el lector natiu no llegia res; l'app només el carregava si el navegador no tenia lector natiu. Si el navegador diu que en té però no funciona (Safari amb la funció experimental activada), l'app no llegia mai.
+
+**Política de seguretat (CSP).** Restringeix d'on pot venir cada cosa. Safari tracta la imatge de la càmera com una adreça `mediastream:`, que la CSP del dia 22 no deixava passar. Chrome no ho comprova: per això l'Android funcionava.
+
+**Càrrega a part = dependència de la xarxa.** Sense *service worker*, un fitxer que es carrega només quan cal no es pot carregar sense connexió. El lector de QR és justament el que es fa servir sense connexió: ara va dins l'app.
+
+**Prova automàtica.** Chromium amb una càmera falsa que mostra un QR real del joc: amb el codi d'abans i un lector natiu que falla no es llegia; amb el codi nou, sí.

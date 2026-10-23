@@ -17,7 +17,7 @@ function csp(server: string | null): Plugin {
     "script-src 'self'",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
-    "media-src 'self' blob:",
+    "media-src 'self' blob: mediastream:", // mediastream: és la càmera a Safari
     `connect-src ${connect}`,
     "manifest-src 'self'",
     "worker-src 'self' blob:",

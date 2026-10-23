@@ -1,7 +1,9 @@
 /**
  * QR: dibuixar-lo (qrcode-generator, mode alfanumèric, correcció M, com a la prova M0)
- * i llegir-lo amb la càmera (lector natiu del navegador si n'hi ha; si no, jsQR, carregat només quan cal).
+ * i llegir-lo amb la càmera: lector natiu del navegador si n'hi ha i, si no llegeix res, jsQR (com a M0).
+ * jsQR va dins l'app (no es carrega a part) perquè el lector ha de funcionar sense connexió.
  */
+import jsQR from "jsqr";
 import qrcode from "qrcode-generator";
 import { useEffect, useRef, useState } from "preact/hooks";
 
@@ -50,7 +52,6 @@ export function Scanner({ onRead }: { onRead: (text: string) => void }) {
     let stream: MediaStream | null = null;
     let stop = false;
     let detector: Detector | null = null;
-    let jsQR: typeof import("jsqr").default | null = null;
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
 
@@ -62,7 +63,7 @@ export function Scanner({ onRead }: { onRead: (text: string) => void }) {
         if (detector) {
           try { const r = await detector.detect(v); if (r[0]) text = r[0].rawValue; } catch { /* res */ }
         }
-        if (!text && jsQR && ctx) {
+        if (!text && ctx && v.videoWidth) {
           const scale = Math.min(1, 960 / Math.max(v.videoWidth, v.videoHeight));
           canvas.width = Math.round(v.videoWidth * scale);
           canvas.height = Math.round(v.videoHeight * scale);
@@ -78,8 +79,9 @@ export function Scanner({ onRead }: { onRead: (text: string) => void }) {
     (async () => {
       try {
         stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
-      } catch {
-        setError("No s'ha pogut obrir la càmera. Dona permís a la càmera o enganxa el codi a sota.");
+      } catch (e) {
+        const why = e instanceof Error ? ` (${e.name})` : "";
+        setError(`No s'ha pogut obrir la càmera${why}. Dona permís a la càmera o enganxa el codi a sota.`);
         return;
       }
       if (stop) { stream.getTracks().forEach(t => t.stop()); return; }
@@ -90,7 +92,6 @@ export function Scanner({ onRead }: { onRead: (text: string) => void }) {
       if (BD) {
         try { if ((await BD.getSupportedFormats()).includes("qr_code")) detector = new BD({ formats: ["qr_code"] }); } catch { /* res */ }
       }
-      if (!detector) jsQR = (await import("jsqr")).default;
       void loop();
     })();
 
