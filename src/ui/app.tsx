@@ -16,7 +16,7 @@ import { Modal, TileFace } from "./game-screen";
 import { QrCode, Scanner, useWakeLock } from "./qr";
 import { askPersistence, deviceId, gameStore, pendingNames, setPendingName } from "./storage";
 import { controlCode, loadLexicon, newGameId, randomBytes, vibrate, wordChecker } from "./support";
-import { canAddPlayer, Table, type QrRequest } from "./table";
+import { canAddPlayer, Table, type Handoff, type QrRequest } from "./table";
 import { describeAction, dictionaryText, errorText, netText } from "./text";
 import { Info, markWelcomeSeen, Welcome, welcomeSeen } from "./info";
 
@@ -32,6 +32,8 @@ export function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [screen, setScreen] = useState<Screen>("home");
   const [qr, setQr] = useState<QrRequest | null>(null);
+  /** Últim QR de traspàs de torn: si qui l'ha ensenyat ha confirmat que l'altre l'ha escanejat (D-40). */
+  const [handoff, setHandoff] = useState<Handoff | null>(null);
   const [setupNames, setSetupNames] = useState<string[] | null>(null);
   const [joinKey, setJoinKey] = useState<Uint8Array | null>(null);
   const [whoFromQr, setWhoFromQr] = useState(false);
@@ -121,7 +123,13 @@ export function App() {
     </Modal>
   );
 
-  if (qr) return <QrScreen q={qr} session={session} onClose={() => setQr(null)} />;
+  if (qr) {
+    const close = (confirmed: boolean) => {
+      if (qr.handoff && session) setHandoff({ gameId: session.head.gameId, seq: session.head.seq, q: qr, confirmed });
+      setQr(null);
+    };
+    return <QrScreen q={qr} session={session} onClose={close} />;
+  }
 
   /** Un mòbil nou entra a la partida amb un QR (d'invitació, amb seient, o de la partida, sense). */
   const joinFromPacket = (p: Packet): string | null => {
@@ -255,7 +263,7 @@ export function App() {
   return (
     <>
       <Table session={session} isWord={isWord} onHome={() => setScreen("home")} onInvite={() => setScreen("invite")}
-        onScan={() => setScreen("scan")} onQr={setQr} />
+        onScan={() => setScreen("scan")} onQr={setQr} handoff={handoff} />
       {confirmModal}
     </>
   );
@@ -316,7 +324,8 @@ function Draw({ state, onGo }: { state: GameState; onGo: () => void }) {
   );
 }
 
-function QrScreen({ q, session, onClose }: { q: QrRequest; session: Session | null; onClose: () => void }) {
+/** Sempre dues sortides: confirmar que l'han escanejat o tornar sense haver-lo ensenyat (D-40). */
+function QrScreen({ q, session, onClose }: { q: QrRequest; session: Session | null; onClose: (confirmed: boolean) => void }) {
   useWakeLock();
   const h = session?.head;
   return (
@@ -325,9 +334,10 @@ function QrScreen({ q, session, onClose }: { q: QrRequest; session: Session | nu
       <QrCode text={q.text} />
       {q.note && <p>{q.note}</p>}
       <p class="sub">Puja la brillantor de la pantalla.{h ? ` Versió ${h.seq} · codi ${controlCode(h)}.` : ""}</p>
-      <button class="primary big" onClick={onClose}>{q.done ?? "Fet"}</button>
+      <button class="primary big" onClick={() => onClose(true)}>{q.done ?? "Ja l'han escanejat"}</button>
+      <button class="big" onClick={() => onClose(false)}>{q.handoff ? "Encara no: torna al joc" : "Torna sense ensenyar-lo"}</button>
       {q.allowUndo && session?.canUndo() && (
-        <button class="link" onClick={() => { session.undo(); onClose(); }}>Encara no l'ha escanejat i m'he equivocat: desfés la jugada</button>
+        <button class="link" onClick={() => { session.undo(); onClose(true); }}>M'he equivocat: desfés la jugada (només si encara no l'ha escanejat)</button>
       )}
     </main>
   );

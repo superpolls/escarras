@@ -17,7 +17,10 @@ import { controlCode, vibrate } from "./support";
 import { describeAction, dictionaryText, errorText, netText, points } from "./text";
 
 /** done: text del botó per tornar al joc. Quan es passa el torn, diu que l'altre ja l'ha escanejat (D-39). */
-export interface QrRequest { text: string; title: string; note?: string; allowUndo?: boolean; done?: string }
+export interface QrRequest { text: string; title: string; note?: string; allowUndo?: boolean; done?: string; handoff?: boolean }
+
+/** QR de traspàs de torn ja ensenyat en aquesta versió de la partida, confirmat o no (D-40). */
+export interface Handoff { gameId: string; seq: number; q: QrRequest; confirmed: boolean }
 
 const wordsOf = (s: GameState, placements: readonly Placement[], isWord: IsWord, onlyUnknown: boolean) => {
   const c = checkPlay(s, placements, onlyUnknown ? isWord : () => true);
@@ -45,13 +48,14 @@ export function LastMove({ session }: { session: Session }) {
   return <p class="last-move">{text}</p>;
 }
 
-export function Table({ session, isWord, onHome, onInvite, onScan, onQr }: {
+export function Table({ session, isWord, onHome, onInvite, onScan, onQr, handoff }: {
   session: Session;
   isWord: IsWord;
   onHome: () => void;
   onInvite: () => void;
   onScan: () => void;
   onQr: (q: QrRequest) => void;
+  handoff: Handoff | null;
 }) {
   const h = session.head;
   const seats = session.seatsHere;
@@ -96,6 +100,7 @@ export function Table({ session, isWord, onHome, onInvite, onScan, onQr }: {
         title: `Passa-ho a: ${n.players[target]?.name ?? ""}`,
         note: n.proposal ? "Que escanegi aquest codi per acceptar o no la paraula." : "Que escanegi aquest codi i li tocarà.",
         allowUndo: true,
+        handoff: true,
         done: `${n.players[target]?.name ?? ""} ja l'ha escanejat`,
       });
     }
@@ -116,6 +121,10 @@ export function Table({ session, isWord, onHome, onInvite, onScan, onQr }: {
   const missingVotes = removal ? activePlayers(h).filter(p => p !== removal.target && !removal.votes.includes(p)) : [];
   const myVoters = missingVotes.filter(p => session.holds(p));
   const proposalWords = h.proposal ? wordsOf(h, h.proposal.placements, isWord, true) : [];
+  // A qui s'ha de passar la jugada i si el QR d'aquesta versió ja s'ha ensenyat (D-40)
+  const passTo = h.proposal ? approver ?? h.current : h.current;
+  const thisHandoff = handoff && handoff.gameId === h.gameId && handoff.seq === h.seq ? handoff : null;
+  const unconfirmed = !!thisHandoff && !thisHandoff.confirmed && !session.holds(passTo);
 
   const banners = (
     <>
@@ -129,10 +138,16 @@ export function Table({ session, isWord, onHome, onInvite, onScan, onQr }: {
           {myVoters.map(p => <button key={p} onClick={() => act({ type: "vote-remove", target: removal.target }, p)}>{multi ? `${name(p)}: hi estic d'acord` : "Hi estic d'acord"}</button>)}
         </div>
       )}
-      {session.pending && (session.net === "pending" || session.net === "offline") && h.last && session.holds(h.last.player) && !session.holds(h.current) && (
+      {unconfirmed && (
+        <div class="banner">
+          <span>{name(passTo)} encara no ha escanejat la jugada.</span>
+          <button onClick={() => onQr({ ...handoff!.q, text: packetToText(session.qrPacket()) })}>Mostra el QR</button>
+        </div>
+      )}
+      {!thisHandoff && session.pending && (session.net === "pending" || session.net === "offline") && h.last && session.holds(h.last.player) && !session.holds(h.current) && (
         <div class="banner">
           <span>No s'ha pogut enviar. Ensenya el QR a {name(h.proposal ? approver ?? h.current : h.current)}.</span>
-          <button onClick={() => onQr({ text: packetToText(session.qrPacket()), title: `Passa-ho a: ${name(h.proposal ? approver ?? h.current : h.current)}`, allowUndo: true, done: `${name(h.proposal ? approver ?? h.current : h.current)} ja l'ha escanejat` })}>Mostra el QR</button>
+          <button onClick={() => onQr({ text: packetToText(session.qrPacket()), title: `Passa-ho a: ${name(passTo)}`, allowUndo: true, handoff: true, done: `${name(passTo)} ja l'ha escanejat` })}>Mostra el QR</button>
         </div>
       )}
       {h.proposal && proposerMine && !approverMine && (
@@ -174,7 +189,7 @@ export function Table({ session, isWord, onHome, onInvite, onScan, onQr }: {
           <p class="sub">{dictionaryText(h)}</p>
           <div class="col">
             <button onClick={() => { setMenu(null); onScan(); }}>Escaneja un codi</button>
-            <button onClick={() => { setMenu(null); onQr({ text: packetToText(session.qrPacket()), title: "QR de la partida", note: "Qui l'escanegi es posarà al dia, si aquest mòbil va més avançat. Un mòbil nou hi podrà triar quin jugador és.", done: "Tanca" }); }}>Torna a mostrar el QR (posar al dia un mòbil)</button>
+            <button onClick={() => { setMenu(null); onQr({ text: packetToText(session.qrPacket()), title: "QR de la partida", note: "Qui l'escanegi es posarà al dia, si aquest mòbil va més avançat. Un mòbil nou hi podrà triar quin jugador és." }); }}>Torna a mostrar el QR (posar al dia un mòbil)</button>
             <button onClick={() => { setMenu(null); onInvite(); }}>Convida o afegeix jugadors</button>
             {seats.some(p => h.players[p]?.status === "active") && <button onClick={() => setMenu("rename")}>Canvia el meu nom</button>}
             {!removal && activePlayers(h).length > 2 && seats.some(p => h.players[p]?.status === "active") && <button onClick={() => setMenu("remove")}>Treu un jugador absent</button>}
@@ -270,7 +285,7 @@ export function Table({ session, isWord, onHome, onInvite, onScan, onQr }: {
     : `Torn: ${name(h.current)}.${offline ? "" : " La jugada t'arribarà sola."}`;
   // Amb connexió la jugada arriba sola: els botons de QR només surten sense connexió (al menú hi són sempre)
   const scanBtn = offline ? <button class="primary" onClick={onScan}>Sense connexió: escaneja el QR quan et toqui</button> : null;
-  const showBtn = offline ? <button onClick={() => onQr({ text: packetToText(session.qrPacket()), title: `Ensenya-ho a ${name(h.current)}`, note: "Així tindrà la partida al dia.", done: "Tanca" })}>Torna a mostrar el meu QR</button> : null;
+  const showBtn = offline ? <button onClick={() => onQr({ text: packetToText(session.qrPacket()), title: `Ensenya-ho a ${name(h.current)}`, note: "Així tindrà la partida al dia.", handoff: !!h.last && session.holds(h.last.player), done: `${name(h.current)} ja l'ha escanejat` })}>Torna a mostrar el meu QR</button> : null;
   const undoBtn = session.canUndo() && h.last ? <button onClick={() => { session.undo(); after(); }}>Desfés</button> : null;
 
   // Un sol jugador en aquest mòbil: mentre espera, pot ordenar l'atril i provar jugades (no compten)
