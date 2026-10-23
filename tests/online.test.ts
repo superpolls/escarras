@@ -73,6 +73,23 @@ describe("en línia (servidor fals amb les regles de Firebase)", () => {
     expect(raw).toContain(roomId(KEY));
   });
 
+  it("en pujar la jugada, la pantalla es torna a dibuixar sense «Pendent de pujar» (D-43)", async () => {
+    const { phones } = await table(2);
+    // Una primera jugada perquè tot quedi estable (seients inclosos), com en una partida en marxa
+    let p = turnPhone(phones);
+    p.commit(applyAction(p.head, { type: "pass" }, anyWord));
+    await waitFor(() => converged(phones) && phones.every(x => !x.pending));
+    await new Promise(r => setTimeout(r, 300));
+    p = turnPhone(phones);
+    const seen: boolean[] = [];
+    p.subscribe(() => seen.push(p.pending));
+    p.commit(applyAction(p.head, { type: "pass" }, anyWord));
+    await waitFor(() => converged(phones) && !p.pending);
+    await new Promise(r => setTimeout(r, 300));
+    expect(seen[0]).toBe(true); // just després de jugar
+    expect(seen.at(-1)).toBe(false); // l'últim dibuix ja no diu «Pendent de pujar»
+  });
+
   it("dos mòbils publiquen alhora: el segon fa rebase i es conserven les dues accions", async () => {
     const { phones } = await table(3);
     const mover = turnPhone(phones);

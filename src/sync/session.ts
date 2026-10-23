@@ -91,7 +91,7 @@ export class Session {
 
   subscribe(fn: () => void): () => void { this.listeners.add(fn); return () => this.listeners.delete(fn); }
   onMyTurn(fn: () => void): () => void { this.myTurnListeners.add(fn); return () => this.myTurnListeners.delete(fn); }
-  private emit(): void { for (const f of this.listeners) f(); }
+  private emit(): void { this.shownPending = this.pending; for (const f of this.listeners) f(); }
 
   private connecting: Promise<void> | null = null;
 
@@ -210,8 +210,12 @@ export class Session {
     return !!this.server && this.serverHash !== short(this.head);
   }
 
+  /** «Pendent de pujar» que es va mostrar l'últim cop: si canvia, la pantalla s'ha de tornar a dibuixar (D-43). */
+  private shownPending = false;
+
   private setNet(n: NetStatus): void {
-    if (this.net !== n) { this.net = n; this.emit(); }
+    const p = this.pending;
+    if (this.net !== n || this.shownPending !== p) { this.net = n; this.emit(); }
   }
 
   private scheduleRetry(): void {
